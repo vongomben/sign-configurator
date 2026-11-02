@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bend test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 0 1rem 1rem; color: #222; }
+      nav { padding: 0.5rem 0; }
+      main { display: grid; grid-template-columns: 20rem 1fr; gap: 1rem; }
+      fieldset { border: 1px solid #ccc; border-radius: 4px; margin: 0 0 0.75rem; }
+      label { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }
+      label input[type='number'] { width: 5.5rem; }
+      label.check { justify-content: flex-start; }
+      button { margin: 0.25rem 0.25rem 0.25rem 0; padding: 0.4rem 0.8rem; }
+      #viewer { min-height: 70vh; background: #1d1f24; border-radius: 4px; position: relative; }
+      #report { font-size: 0.85rem; white-space: pre-wrap; background: #f4f4f4; padding: 0.5rem; border-radius: 4px; }
+      #report.error { background: #fde8e8; color: #8a1010; }
+      .legend { font-size: 0.85rem; }
+      .legend dt { font-weight: 600; margin-top: 0.4rem; }
+      .legend dd { margin-left: 1rem; }
+    </style>
+  </head>
+  <body>
+    <nav><a href="./index.html">Cliente</a> · <a href="./admin.html">Admin</a> · <a href="./debug.html">Debug</a> · <a href="./bend-test.html">Bend test</a> · <a href="./spec.html">Spec</a></nav>
+    <main id="app">
+      <aside>
+        <h1>Bend test</h1>
+        <form id="controls">
+          <fieldset>
+            <legend>Canale (mm)</legend>
+            <label>CHANNEL_W <input name="CHANNEL_W" type="number" step="0.1" min="1" /></label>
+            <label>CHANNEL_DEPTH <input name="CHANNEL_DEPTH" type="number" step="0.1" min="1" /></label>
+            <label>WALL <input name="WALL" type="number" step="0.1" min="0.8" /></label>
+            <label>FLOOR <input name="FLOOR" type="number" step="0.1" min="1" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Striscia (mm)</legend>
+            <label>STRIP_W <input name="STRIP_W" type="number" step="0.1" min="1" /></label>
+            <label>STRIP_T <input name="STRIP_T" type="number" step="0.1" min="0.2" /></label>
+            <label>HINGE_PITCH <input name="HINGE_PITCH" type="number" step="0.1" min="1" /></label>
+            <label>BANK_TRANSITION_L <input name="BANK_TRANSITION_L" type="number" step="1" min="0" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Fili (mm)</legend>
+            <label>WIRE_SLOT_W <input name="WIRE_SLOT_W" type="number" step="0.1" min="0.5" /></label>
+            <label>WIRE_SLOT_L <input name="WIRE_SLOT_L" type="number" step="0.1" min="0.5" /></label>
+            <label>SLOT_LIP_CHAMFER <input name="SLOT_LIP_CHAMFER" type="number" step="0.1" min="0" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Bordi</legend>
+            <label>EDGE_PROFILE
+              <select name="EDGE_PROFILE">
+                <option value="square">square: spigoli vivi</option>
+                <option value="outer">outer: smusso esterno</option>
+                <option value="inner">inner: smusso interno</option>
+                <option value="both">both: entrambi</option>
+              </select>
+            </label>
+            <label>CHAMFER_SIZE <input name="CHAMFER_SIZE" type="number" step="0.1" min="0" /></label>
+            <label>CHAMFER_ANGLE <input name="CHAMFER_ANGLE" type="number" step="1" min="1" max="89" /></label>
+            <label>LAYER_STEP <input name="LAYER_STEP" type="number" step="0.02" min="0.04" /></label>
+          </fieldset>
+          <label class="check"><input name="variants" type="checkbox" /> 2 varianti di tolleranza: CHANNEL_W 5.4 / 5.8</label>
+          <button type="submit">Genera</button>
+          <button type="button" id="download-arcs" disabled>Scarica STL A</button>
+          <button type="button" id="download-corners" disabled>Scarica STL B</button>
+          <button type="button" id="download-bank" disabled>Scarica STL D</button>
+          <button type="button" id="download-joints" disabled>Scarica STL E</button>
+        </form>
+        <pre id="report">Caricamento manifold…</pre>
+        <dl class="legend">
+          <dt>Pezzo A, archi (a sinistra)</dt>
+          <dd>Dritti di 30 e archi da 180° alternati: R40, R25, R15, R10, R7. Sugli archi il canale è più largo verso l'interno di s = HINGE_PITCH²/(8R).</dd>
+          <dt>Pezzo B, angoli (a destra)</dt>
+          <dd>Zig-zag di dritti lunghi 3 × HINGE_PITCH, spigoli di 30°, 45°, 60°, 75°, 90°. Interno vivo, esterno arrotondato e allargato perché la striscia piegata in un solo intaglio ci stia.</dd>
+          <dt>Pezzo D, inclinazione</dt>
+          <dd>Quattro archi R10 da 90°, dritti di 40. Il fondo ruota attorno alla tangente (lato interno più basso) di 0°, 20°, 35°, 50°, con transizione lineare BANK_TRANSITION_L prima e dopo l'arco. Le pareti e la cima restano orizzontali; il canale si allarga per la striscia inclinata.</dd>
+          <dt>Pezzo E, giunti</dt>
+          <dd>Dritti di 40 e spigoli di 90°, 90°, 120°. Su ogni spigolo una tasca CORNER_POCKET: le due asole unite, a piena larghezza, con lo smusso del labbro sui due ingressi.</dd>
+          <dt>Fori Ø2 sul fondo</dt>
+          <dd>Sul dritto subito prima della piega che marcano: 1, 2, 3… fori. Su A/B: R40 / 30° fino a R7 / 90°. Su D: le quattro inclinazioni. Su E: 90°, 90°, 120°.</dd>
+          <dt>Asole fili</dt>
+          <dd>Gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata. Larga quanto il canale. La parte illuminata finisce sul labbro, dove la striscia scende verso il retro con uno smusso SLOT_LIP_CHAMFER a 45°. Inizio = DIN, fine = DOUT.</dd>
+          <dt>Bordi</dt>
+          <dd>Smusso a gradini alti LAYER_STEP, alto CHAMFER_SIZE (verticale) a CHAMFER_ANGLE dall'orizzontale. Con smusso interno in cima restano almeno 0.8 mm di parete.</dd>
+          <dt>Tacche sul bordo esterno</dt>
+          <dd>Sul primo tratto dritto: 1 = W 5.4, 2 = W 5.8 (solo con le varianti).</dd>
+        </dl>
+      </aside>
+      <div id="viewer"></div>
+    </main>
+    <script type="module" src="/src/tools/bendTest.ts"></script>
+  </body>
+</html>
