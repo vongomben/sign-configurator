@@ -3,8 +3,17 @@
 export const GENERATOR_VERSION = '0.2.0';
 export const ORDER_SCHEMA_VERSION = 2;
 
+/** Pagina cliente: offre il download di housing.stl e, se attivo, diffuser.stl (SPEC §5). */
+export const CUSTOMER_STL_DOWNLOAD = true;
+
 /** Lato lungo massimo di una bitmap caricata, prima della soglia (SPEC §4bis). */
 export const IMAGE_MAX_PX = 4096;
+
+/** Tolleranza del fit spezzone → Bézier all'apertura dell'editor (SPEC §5bis). */
+export const EDIT_FIT_TOL = 0.3;
+
+/** Distanza minima fra due nodi consecutivi durante il trascinamento (SPEC §5bis). */
+export const EDIT_MIN_NODE_DIST = 0.5;
 
 /** Profilo dello spigolo superiore della parete (SPEC §3). */
 export type EdgeProfile = 'square' | 'outer' | 'inner' | 'both';

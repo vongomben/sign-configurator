@@ -7,7 +7,7 @@ Se il codice e questo documento divergono, si aggiorna prima il documento.
 
 Web app 100% client-side (sito statico, nessun backend per la geometria):
 
-- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm) e colore; se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine. Cambiare lo spessore rigenera l'anteprima.
+- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm) e colore; se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine e può scaricare gli STL dell'insegna. Cambiare lo spessore rigenera l'anteprima.
 - **Admin (Davide)**: dallo stesso JSON d'ordine rigenera in modo deterministico i file di produzione:
   1. `housing.stl` — cornice/canale da stampare in nero
   2. `diffuser.stl` — coperchio diffusore opzionale (bianco/naturale)
@@ -287,6 +287,12 @@ La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `l
 - Sfondo a muro. `OrbitControls` restano sulla vista frontale, ±40° in azimut e in altezza.
 - Su un laptop si punta ai 60 fps (pixel ratio al massimo 1,5, mappa di luminosità fino a 512 px).
   Su mobile il pixel ratio è 1, la mappa arriva a 256 px e il bloom è calcolato a metà risoluzione.
+- **STL del cliente** (`index.html`), se `CUSTOMER_STL_DOWNLOAD` in `src/config.ts` è vero: un pulsante
+  «Scarica STL» accanto all'invio, visibile senza scorrere. Scarica `housing.stl` e, se il diffusore
+  è attivo nell'anteprima, anche `diffuser.stl`, dalle mesh già calcolate per la scena (niente
+  seconda generazione). È disabilitato, con la scritta «Generazione…», finché `generate()` non ha
+  restituito `housingMesh`; testo, font, altezza o diffusore lo disabilitano di nuovo e non si
+  scarica mai una mesh precedente. BOM, DXF e SVG restano solo in admin.
 
 ### [A] Rasterizzazione (`src/geometry/rasterize.ts`)
 
@@ -591,6 +597,27 @@ freccia su ogni spezzone.
 - Un ordine `schemaVersion: 1` si legge come v2: `text` e `fontId` vanno in `source`
   (`kind: "text"`), `paths: null`, `crossings: []`. Stessi file di prima.
 
+### Campi del cliente (`schemaVersion` 3)
+
+```json
+{ "schemaVersion": 3, "generatorVersion": "0.2.0", "pricingVersion": "2026-11",
+  "source": { "kind": "text", "text": "Ciao", "fontId": "sacramento" },
+  "heightMm": 120, "sizePreset": "M", "color": "#ff2fd6", "params": {},
+  "paths": null, "crossings": [],
+  "customer": { "effect": "colore fisso", "diffuser": true, "mount": "wall",
+                "plug": "EU", "proof": true } }
+```
+
+- `customer` raccoglie le scelte del cliente che **non cambiano la geometria**: `effect`
+  (`"colore fisso"` | `"arcobaleno"`), `diffuser`, `mount` (`"wall"`), `plug` (`"EU"`), `proof`
+  (bozza di approvazione). Il diffusore cambia solo se `diffuser.stl` si esporta; il profilo dei bordi
+  e lo spessore della cornice restano in `params` (`EDGE_PROFILE`, `WALL`), come oggi.
+- `sizePreset` è informativo: fa fede `heightMm`. `pricingVersion` fissa la tabella prezzi (§12.5).
+- Migrazione in `src/order/schema.ts`: v1 → v2 come oggi, poi v2 → v3 con `customer` ai default
+  sopra, `sizePreset` e `pricingVersion` `null`. Un ordine v1 o v2 migrato produce **gli stessi STL
+  e la stessa BOM** (test come `orderSchema.test.ts`).
+- L'ordine **non contiene dati personali**: i contatti viaggiano solo nella richiesta (§12.7).
+
 Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo, nessuna casualità).
 
 ## 7. Stack
@@ -630,10 +657,13 @@ src/
   viewer/scene.ts, neonMaterial.ts
   sources/svgImport.ts (main thread), svgPaths.ts, rasterImport.ts (main thread), bitmapCodec.ts, contours.ts
   editor/editor.ts (Paper.js, UI), paths.ts (formato, scala, appiattimento: puro), crossings.ts, liveCheck.ts
-  order/schema.ts (tipi v2, migrazione da v1)
+  order/schema.ts (tipi v3, migrazione v1 → v2 → v3)
+  pricing.ts                      (§12.5, puro)
+  order/share.ts                  (§12.6)
+  ui/copy.it.ts, sizes.ts, steps/ (§12)
   ui/customer.ts, admin.ts, debug.ts
   tools/bendTest.ts (pagina), bendTestGeometry.ts (pezzi di prova A archi / B angoli, testabile in Node)
-index.html   (cliente)
+index.html   (cliente, §12)
 admin.html   (admin: incolla o carica JSON, scarica ZIP)
 debug.html   (bitmap di [A], o le linee del font se è a tratto singolo; poi grafo, segmenti, cerniere)
 bend-test.html
@@ -644,6 +674,7 @@ playwright.config.ts
 ## 9. Fuori scope v1
 
 Suddivisione per il piatto di stampa, lastra di fondo CNC, pagamenti, account utente.
+La pagina cliente invia una richiesta, non un ordine pagato (§12.7).
 
 ## 10. Domande aperte
 
@@ -652,7 +683,198 @@ di `config.ts`, da aggiornare dopo le misure sul campione stampato.
 
 Immagini caricate dal cliente: serve una dichiarazione che ne ha i diritti (casella prima dell'invio)?
 
+Per la pagina cliente (§12), da decidere prima della pubblicazione: costanti di prezzo
+(`src/pricing.ts`), tempi di produzione e consegna, garanzia, costi e zone di spedizione, chi emette
+la fattura, indirizzo email delle richieste, servizio di invio del modulo senza client di posta, testo
+dell'informativa privacy. Il §12 si prova prima in `shop-test.html` (solo locale) e passa in
+`index.html` dopo l'approvazione di Davide.
+
 ## 11. Roadmap post-v1
 
 - **Trasformazioni per lettera** nell'editor (§5bis): sposta, ruota, scala, spaziatura, con la
   lettera come gruppo di spezzoni.
+
+## 12. Pagina cliente: proposta di valore, flusso, prezzo
+
+Riferimento di mercato: i configuratori di insegne LED neon flex già in vendita (es. customneon.com).
+Se ne prende **la struttura** (passi numerati, prezzo immediato, barra di fiducia, preventivo su
+misura sempre raggiungibile, design condivisibile). **Non** se ne riprendono testi, immagini, nomi dei
+font, marchi o slogan.
+
+### 12.1 Proposta di valore
+
+1. **Quello che vedi è quello che stampiamo.** L'anteprima è la geometria dell'STL (§5) con la luce
+   calcolata sui LED reali (`lightPoints`); i vincoli fisici si vedono prima dell'ordine.
+2. **Il tuo disegno, non solo un font.** Testo, firma o logo (§4bis), ritoccabili nell'editor (§5bis).
+3. **Fatta qui, riparabile.** Stampata e assemblata in Italia; cornice, diffusore e strisce sono
+   pezzi separabili e sostituibili.
+4. **Ogni LED è indirizzabile.** Gli effetti sono di serie, non un sovrapprezzo (§2).
+
+Titolo di lavoro: *«Scrivi o disegna. Guarda la tua insegna come verrà stampata davvero.»*
+Tutti i testi in `src/ui/copy.it.ts`. **Barra di fiducia**: 3 voci da `copy.it.ts`; una voce con
+valore `null` (dato non ancora deciso, §10) non si mostra.
+
+### 12.2 Una schermata, un passo alla volta
+
+Il configuratore occupa **una sola schermata** (`100dvh`) e la pagina non scorre.
+
+- **Desktop** (≥ 900 px): anteprima a sinistra (circa 65 % della larghezza), pannello del passo a
+  destra. **Mobile**: anteprima in alto (circa 45 % dell'altezza), pannello sotto. Se un passo non ci
+  sta, scorre solo il contenuto del pannello.
+- **In cima**: intestazione sottile con nome, barra di fiducia e pulsante «Info» (12.9); sotto, la
+  **barra dei passi** (numero e nome breve; su mobile solo i numeri). Il passo corrente è evidenziato,
+  quelli già visitati sono cliccabili, quelli successivi no.
+- **Un passo alla volta** nel pannello. In fondo al pannello, fissi: prezzo indicativo, «Indietro» e
+  «Avanti» (al passo 7 «Invia richiesta»). «Avanti» si disattiva solo per un vincolo bloccante del
+  passo corrente (12.4), con il motivo scritto accanto; i passi facoltativi hanno «Salta».
+- Ogni cambio aggiorna subito 2D e prezzo; il 3D quando è pronto (§5). Tornare indietro non perde le
+  scelte fatte.
+- Controlli dell'anteprima (sfondo, quote, accesa/spenta, 12.3) sovrapposti in un angolo
+  dell'anteprima, sempre disponibili: non sono un passo.
+- Nel passo 4 l'anteprima diventa la tela dell'editor (§5bis) e il pannello mostra i suoi strumenti;
+  «Fatto» torna all'anteprima 3D.
+
+I passi:
+
+1. **Testo o immagine.** Due schede. *Testo*: una riga, contatore, caratteri senza glifo segnalati.
+   *Immagine*: caricamento come §4bis (soglia, inverti, `trace` «Linea centrale» / «Contorno»), con
+   gli avvisi di bassa risoluzione e tratto non uniforme.
+2. **Font** (solo testo). Una scheda per font del registro (§4) con **il testo del cliente** in
+   miniatura 2D dalla pipeline, con debounce di 300 ms.
+3. **Dimensione.** Taglie in `src/ui/sizes.ts`: `S 80`, `M 120`, `L 180`, `XL 250` mm (default da
+   tarare), cioè la sommità della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis).
+   Ogni scheda mostra l'ingombro reale (larghezza × altezza di `outline` di [H]) e il prezzo. Le taglie
+   sotto l'altezza minima (§5) sono disattivate con motivo e altezza minima. «Misura libera»: slider
+   in mm con lo stesso limite.
+4. **Ritocca (facoltativo).** Pulsante «Modifica tracciati» → editor §5bis. Cambiare poi testo, font
+   o immagine scarta le modifiche dopo conferma (§5bis); cambiare la misura le scala.
+5. **Colore ed effetto.** Tavolozza + selettore libero; `"colore fisso"` / `"arcobaleno"`.
+   **v1.1**: un colore per spezzone, scelto toccandolo nell'anteprima.
+6. **Finitura.** Diffusore sì/no con le due anteprime affiancate («luce morbida» / «LED a vista»);
+   bordo «dritto» (`"square"`) o «smussato» (`"outer"`); spessore cornice (`WALL`, 1,6–5 mm, §1).
+   Gli altri parametri di §3 restano solo in admin.
+7. **Riepilogo e richiesta.** Scelte, alimentatore (taglio da `supplyA`, spina EU, non selezionabile),
+   fissaggio a parete, prezzo, toggle **bozza di approvazione** (default sì), poi il modulo (12.7).
+
+Nel pannello, sotto i pulsanti, un link discreto: **«Non riesci a ottenere quello che vuoi?»** →
+preventivo (12.8).
+
+### 12.3 Anteprima ambientata
+
+- Sfondi selezionabili (muro chiaro, muro scuro, mattoni, legno, neutro di §5): texture nostre in
+  `public/backgrounds/`, ≤ 300 kB, con versione mobile. Nella pagina di prova vanno bene pattern
+  generati.
+- Quote in cm attivabili; riferimento di scala opzionale (sagoma neutra di una presa o di una porta).
+- Interruttore accesa/spenta (§5).
+
+### 12.4 Vincoli comprensibili
+
+Gli avvisi di §5, §4bis e §5bis sono per l'admin. Il cliente vede solo questi, con i testi di
+`copy.it.ts`:
+
+| Avviso | Cosa vede il cliente | Blocca la richiesta |
+|---|---|---|
+| altezza minima (curve, fusioni) | «A questa misura le curve sono troppo strette: da X cm in su» + «porta a X cm» | sì |
+| errori dell'editor (§5bis: curve sotto R_MIN, fusioni, spezzoni corti) | marcatore sul tracciato + «correggi o annulla» | sì |
+| carattere senza glifo | «Questo font non ha il carattere "ñ"» | no |
+| immagine a bassa risoluzione | «Immagine poco definita per questa misura: fino a X cm, o caricane una più grande» | no |
+| tratto non uniforme | «Prova la modalità Contorno» + pulsante | no |
+| copertura sotto `COVERAGE_MIN` | «Alcuni tratti restano poco illuminati a questa misura» + altezza consigliata | no |
+| puntino senza striscia | «Il puntino non si accende sotto X cm» | no |
+| spigoli (`CUSP_MODE` `"split"`) | niente | no |
+
+Un vincolo bloccante disattiva il passo 7 mostrando il motivo, non nasconde il pulsante.
+
+### 12.5 Prezzo
+
+Si calcola **dal 2D**, senza aspettare il solido, in `src/pricing.ts` (modulo puro, testato). Vale
+uguale con o senza `paths`.
+
+```
+volumeMm3   = area(outline) · (FLOOR + CHANNEL_DEPTH) − area(canale) · CHANNEL_DEPTH
+grammi      = volumeMm3 / 1000 · PLA_DENSITY · INFILL_FACTOR      (+ diffusore se scelto)
+striscia    = Σ cutLengthMm / 1000                                 (m)
+prezzo      = BASE
+            + striscia · EUR_PER_M_STRIP
+            + grammi   · EUR_PER_G_PRINT
+            + assembly.segments     · EUR_PER_SEGMENT
+            + assembly.solderJoints · EUR_PER_JOINT
+            + alimentatore(supplyA)                                 (tabella a scaglioni)
+            + opzioni
+prezzoCliente = max(PRICE_MIN, arrotonda_su(prezzo · MARGIN, 5 €))
+```
+
+`priceOrder` riceve la scelta del diffusore e le misure del 2D (aree, somma dei `cutLengthMm`,
+`assembly`, `supplyA`, spessori): non aspetta le mesh. Il volume del diffusore, se `customer.diffuser` è
+vero, è `area(outline) · DIFFUSER_T` (pezzo pieno, senza `INFILL_FACTOR`). `supplyA` 0 non
+aggiunge l'alimentatore; altrimenti vale il primo scaglione con `maxA` ≥ `supplyA`. Effetto e
+bozza restano a 0: gli effetti sono di serie (§12.1). `arrotonda_su` è l'eccesso al multiplo
+di 5 €. Un volume negativo si tratta come 0.
+
+- Costanti con `PRICING_VERSION` (es. `"2026-11"`), valori **segnaposto** finché non fissati (§10).
+- Prezzo **indicativo**, IVA inclusa, spedizione a parte, confermato con la bozza.
+- Ogni taglia del passo 3 mostra il proprio prezzo: il worker calcola il 2D delle altre altezze in
+  sequenza, dopo quella selezionata.
+- In admin e in `shop-test.html`: scomposizione voce per voce.
+- Stesso ordine + stessa `PRICING_VERSION` → stesso prezzo (test).
+
+### 12.6 Condivisione
+
+- «Salva o condividi» produce `index.html#o=<base64url(JSON dell'ordine)>`; aprendolo, la pagina
+  ricostruisce l'insegna. L'hash non arriva al server. Con `navigator.share` si usa il foglio nativo.
+- Un ordine con immagine o `paths` può essere grande: se il link supera **8 kB**, non si offre il
+  link ma **«Scarica il design (.json)»** e «Carica un design».
+- Il link e il file contengono solo l'ordine (§6), mai contatti.
+- All'apertura: migrazione (§6), campi sconosciuti ignorati (anche i contatti), valori fuori limite
+  riportati al limite con avviso, mai un'eccezione. Limiti: altezza 40–800 mm, `WALL` 1,6–5 mm (§1),
+  soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`).
+  `effect`, `mount`, `plug`, `trace` o `sizePreset` sconosciuti tornano al default. `generatorVersion`
+  diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono la lunghezza UTF-8 di `#o=` più
+  il base64url, senza padding.
+
+### 12.7 Richiesta
+
+Nessun pagamento (§9): il passo 7 invia una **richiesta**.
+
+- Campi: nome, email, telefono (facoltativo), CAP e città, data entro cui serve (facoltativa), note,
+  consenso privacy (obbligatorio); con un'immagine, la casella sui diritti d'uso (§10).
+- Invio v1: `mailto:` con oggetto «Richiesta insegna — <testo o nome file>», riepilogo, prezzo
+  indicativo, `PRICING_VERSION` e il link 12.6 (o l'invito ad allegare il `.json`).
+- Pagina di conferma con «cosa succede adesso»; tempi da `copy.it.ts`.
+- L'invio senza client di posta (form esterno o funzione serverless) è una domanda aperta (§10).
+
+### 12.8 Preventivo su misura
+
+Per ciò che la pipeline non chiude (più righe, alfabeti non latini, misure fuori taglia, immagini che
+restano bloccate dopo l'editor): stesso modulo con descrizione, misura approssimativa e budget a
+scaglioni; il file si allega alla mail.
+
+### 12.9 Contenuti informativi
+
+Non stanno sotto il configuratore (12.2: una schermata): si aprono dal pulsante «Info» in un pannello
+sovrapposto, chiudibile con Esc o con «Torna all'insegna», senza perdere lo stato. In quest'ordine:
+
+1. **Come funziona**: crea, ricevi la bozza, ricevi l'insegna.
+2. **Cosa c'è nella scatola**: esploso cornice / striscia / diffusore / alimentatore / fissaggi,
+   generato dalla scena three.js.
+3. **Prima e dopo**: slider anteprima / foto reale, solo con foto nostre (`public/gallery/`).
+4. **FAQ**: sicurezza (5 V, niente vetro, niente calore), consumi, montaggio, pulizia, effetti,
+   garanzia, tempi e spedizione, immagini e diritti, modifiche dopo l'ordine.
+
+### 12.9bis Scaricare l'STL
+
+La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. BOM, DXF e
+SVG restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL (test)» fa lo stesso
+export, per chi sta provando il flusso del §12.
+
+### 12.10 Test
+
+- Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1 e v2
+  migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
+  → niente link, scaricamento `.json`.
+- Smoke (Playwright): con «Ciao Torino» compaiono prezzo e quattro taglie; una taglia sotto il
+  minimo è disattivata con motivo; il link ricostruisce testo, font e altezza; un SVG caricato
+  mostra prezzo e anteprima; a 1280 × 800 e a 390 × 844 la pagina non scorre (`scrollHeight` ≤ altezza della finestra) né in
+  orizzontale né in verticale; «Avanti» e «Indietro» cambiano passo e la barra dei passi permette di
+  tornare a uno già visitato; «Info» si apre e si chiude con Esc; Paper.js non si scarica
+  finché l'editor non si apre.

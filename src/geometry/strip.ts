@@ -302,26 +302,27 @@ function orderPieces(pieces: readonly Piece[]): Piece[] {
   });
 }
 
-function chainOf(points: readonly Point[], closed: boolean, params: Params, id: number): StripChain {
-  const smoothed = smoothPolyline(points, closed);
-  const chain = resampleChain(smoothed, {
+function chainOf(points: readonly Point[], closed: boolean, params: Params, id: number, smooth = true): StripChain {
+  // I tracciati congelati sono già la curva del cliente: niente Chaikin.
+  const curve = smooth ? smoothPolyline(points, closed) : points.map((point): Point => [point[0], point[1]]);
+  const chain = resampleChain(curve, {
     hingePitch: params.HINGE_PITCH,
     hingeMaxDeg: params.HINGE_MAX_DEG,
     channelW: params.CHANNEL_W,
     closed,
   });
-  return { ...chain, id, smooth: smoothed, dot: false };
+  return { ...chain, id, smooth: curve, dot: false };
 }
 
-function chainsFrom(pieces: readonly Piece[], params: Params): StripChain[] {
-  return pieces.map((piece, index) => ({ ...chainOf(piece.points, piece.closed, params, index + 1), dot: piece.dot }));
+function chainsFrom(pieces: readonly Piece[], params: Params, smooth = true): StripChain[] {
+  return pieces.map((piece, index) => ({ ...chainOf(piece.points, piece.closed, params, index + 1, smooth), dot: piece.dot }));
 }
 
 /** Catene a scala ×2: posizioni riportate all'originale, raggi nella scala doppia. */
-function scaledChains(pieces: readonly Piece[], params: Params): StripChain[] {
+function scaledChains(pieces: readonly Piece[], params: Params, smooth = true): StripChain[] {
   return pieces.map((piece, index) => {
     const grown = piece.points.map(([x, y]): Point => [x * 2, y * 2]);
-    const chain = chainOf(grown, piece.closed, params, index + 1);
+    const chain = chainOf(grown, piece.closed, params, index + 1, smooth);
     return {
       ...chain,
       points: chain.points.map(([x, y]): Point => [x / 2, y / 2]),
@@ -558,12 +559,12 @@ function applyDots(segments: Piece[], notices: SegmentNotice[], params: Params, 
   return { pieces: segments, notices, unlit: [], fallback: [] };
 }
 
-function classify(pieces: readonly Piece[], notices: readonly SegmentNotice[], params: Params): {
+function classify(pieces: readonly Piece[], notices: readonly SegmentNotice[], params: Params, smooth = true): {
   chains: StripChain[];
   issues: ValidationIssue[];
 } {
-  const chains = chainsFrom(pieces, params);
-  const issues = validateStrip({ chains, scaledChains: scaledChains(pieces, params), notices, params });
+  const chains = chainsFrom(pieces, params, smooth);
+  const issues = validateStrip({ chains, scaledChains: scaledChains(pieces, params, smooth), notices, params });
   return { chains, issues };
 }
 
@@ -716,9 +717,7 @@ function suggest(
   };
 }
 
-/** Segmenta, leviga, simula la catena, valida e compila la BOM. */
-export function buildStrip(source: SegmentSource, params: Params, heightMm: number): StripModel {
-  const model = compute(source, params, heightMm);
+function finishModel(model: Computed, source: SegmentSource, params: Params, heightMm: number): StripModel {
   const crossings = model.notices.filter((notice) => notice.kind === 'crossing').map((notice): Point => [notice.x, notice.y]);
   const clash = centerlineClearance(
     model.chains.map((chain) => ({ points: chain.smooth, closed: chain.closed })),
@@ -740,4 +739,88 @@ export function buildStrip(source: SegmentSource, params: Params, heightMm: numb
     });
   }
   return { ...model, suggestion: suggest(source, params, heightMm, model, clearanceH) };
+}
+
+/** Segmenta, leviga, simula la catena, valida e compila la BOM. */
+export function buildStrip(source: SegmentSource, params: Params, heightMm: number): StripModel {
+  return finishModel(compute(source, params, heightMm), source, params, heightMm);
+}
+
+/**
+ * Catena e BOM da polilinee già pronte (tracciati congelati).
+ * `smooth` resta falso: la curva del cliente non passa da Chaikin.
+ */
+export function buildStripFromPieces(
+  input: readonly { points: readonly Point[]; closed: boolean; dot?: boolean }[],
+  params: Params,
+  heightMm: number,
+  extras: {
+    notices: readonly SegmentNotice[];
+    gaps: readonly { points: Point[]; lengthMm: number }[];
+  },
+): StripModel {
+  const minOpen = params.CUT_PITCH + 2 * params.WIRE_SLOT_L;
+  let pieces: Piece[] = input
+    .filter((piece) => piece.points.length >= 2)
+    .map((piece) => ({
+      points: piece.points.map((point): Point => [point[0], point[1]]),
+      closed: piece.closed,
+      reference: true,
+      dot: piece.dot === true,
+    }));
+  pieces = orderPieces(joinShort(pieces, minOpen));
+  const notices = extras.notices.map((notice) => ({
+    ...notice,
+    points: notice.points.map((point): Point => [point[0], point[1]]),
+  }));
+  let { chains, issues } = classify(pieces, notices, params, false);
+
+  if (params.CUSP_MODE === 'split' && issues.some((issue) => issue.bend === 'spigolo')) {
+    const next: Piece[] = [];
+    let changed = false;
+    for (const chain of chains) {
+      const piece = pieces[chain.id - 1];
+      if (!piece) continue;
+      const cuts = issues
+        .filter((issue) => issue.bend === 'spigolo' && issue.segmentId === chain.id)
+        .map((issue): Point => [issue.x, issue.y]);
+      if (cuts.length === 0 || piece.closed) {
+        next.push(piece);
+        continue;
+      }
+      const kept = safeCuts(piece.points, cuts, minOpen, params.HINGE_PITCH);
+      const parts = kept.length > 0 ? splitOpen(piece.points, kept, params.HINGE_PITCH) : [piece.points];
+      if (parts.length > 1) changed = true;
+      for (const points of parts) next.push({ points, closed: false, reference: piece.reference, dot: piece.dot });
+    }
+    if (changed) {
+      pieces = orderPieces(joinShort(next, minOpen));
+      ({ chains, issues } = classify(pieces, notices, params, false));
+    }
+  }
+
+  const bom = buildBom(
+    chains.map((chain) => bomPiece(chain)),
+    params,
+    issues.map((issue) => issue.message),
+    notices.filter((notice) => notice.kind === 'crossing').map((notice): Point => [notice.x, notice.y]),
+  );
+  const model: Computed = {
+    chains,
+    issues,
+    notices,
+    unlit: [],
+    bom,
+    paths: pieces.map((piece) => ({
+      points: piece.points.map((point): Point => [point[0], point[1]]),
+      closed: piece.closed,
+      reference: piece.reference,
+    })),
+    gaps: extras.gaps.map((gap) => ({
+      points: gap.points.map((point): Point => [point[0], point[1]]),
+      lengthMm: gap.lengthMm,
+    })),
+    excluded: [],
+  };
+  return finishModel(model, { nodes: [], edges: [] }, params, heightMm);
 }

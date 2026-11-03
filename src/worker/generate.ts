@@ -6,13 +6,15 @@ import type { FontBytesReader } from '../fonts/loadFont';
 import { buildGraph, type SkeletonGraph } from '../geometry/graph';
 import { buildHousing, type HousingHole, type HousingPocket, type HousingSlot } from '../geometry/housing';
 import { getManifold } from '../geometry/manifold';
-import { rasterize, type RasterizeInput, type TextRaster } from '../geometry/rasterize';
+import { rasterize, type GlyphInfo, type RasterizeInput, type TextRaster } from '../geometry/rasterize';
 import { layoutStroke } from '../geometry/strokeLayout';
 import { ledToDiffuserMm, lightPointsFromChains, type LightPoint } from '../geometry/lights';
 import { getFont } from '../fonts/registry';
 import { applyCoverage, coverSign } from '../geometry/coverage';
-import { buildStrip } from '../geometry/strip';
-import { migrateOrder, type OrderV1, type SignOrder } from '../order/schema';
+import { buildStrip, buildStripFromPieces, type StripModel } from '../geometry/strip';
+import { dotSegment, flattenPaths, type EditSegment } from '../editor/paths';
+import { cutCrossingGaps, intersectPaths, resolveCrossings } from '../editor/crossings';
+import { migrateOrder, type OrderV1, type SignOrder, type SignOrderV3 } from '../order/schema';
 import { layoutRaster } from '../sources/bitmapCodec';
 import { layoutSvg } from '../sources/svgPaths';
 
@@ -45,6 +47,25 @@ export interface GenerateResult {
   ledGapMm: number;
   bom: Bom;
   warnings: string[];
+  /** Spezzoni dopo [D], prima di Chaikin. «Modifica tracciati» parte da qui. */
+  segments: EditSegment[];
+}
+
+function editSegments(strip: StripModel): EditSegment[] {
+  const count = Math.max(strip.paths.length, strip.chains.length);
+  const segments: EditSegment[] = [];
+  for (let i = 0; i < count; i++) {
+    const path = strip.paths[i];
+    const chain = strip.chains[i];
+    const points = path?.points ?? chain?.points;
+    if (!points || points.length < 2) continue;
+    segments.push({
+      points: points.map((point) => [point[0], point[1]]),
+      closed: path?.closed ?? chain?.closed ?? false,
+      dot: chain?.dot === true,
+    });
+  }
+  return segments;
 }
 
 function copyMesh(mesh: Mesh): MeshData {
@@ -57,44 +78,78 @@ function copyMesh(mesh: Mesh): MeshData {
   };
 }
 
+/** Con `paths` la geometria è già in mm: niente [A]–[D] e niente Chaikin. */
+function stripFromPaths(order: SignOrderV3, params: ReturnType<typeof resolveParams>, warnings: string[]): StripModel {
+  const flat = flattenPaths(order.paths ?? []);
+  const hits = intersectPaths(flat.curves);
+  const resolved = resolveCrossings(hits, order.crossings);
+  warnings.push(...resolved.warnings);
+  const cut = cutCrossingGaps(flat.curves, resolved.applied, params.CROSSING_GAP);
+  const pieces = [
+    ...cut.pieces.map((piece) => ({ points: piece.points, closed: piece.closed, dot: false })),
+    ...flat.dots.map((dot) => ({
+      points: dotSegment(dot.center, dot.angle, params.CUT_PITCH),
+      closed: false,
+      dot: true,
+    })),
+  ];
+  return buildStripFromPieces(pieces, params, order.heightMm, {
+    notices: resolved.applied.map((crossing) => ({
+      kind: 'crossing' as const,
+      x: crossing.at[0],
+      y: crossing.at[1],
+      radiusMm: null,
+      degree: 4,
+      points: [],
+    })),
+    gaps: cut.gaps,
+  });
+}
+
 /** Pipeline completa. `read` serve ai test in Node; nel browser il worker usa fetch. */
-export async function generateSign(order: SignOrder | OrderV1, read?: FontBytesReader): Promise<GenerateResult> {
+export async function generateSign(order: SignOrder | OrderV1 | SignOrderV3, read?: FontBytesReader): Promise<GenerateResult> {
   const current = migrateOrder(order);
   const params = resolveParams(current.params);
   const warnings: string[] = [];
-  if (current.paths != null) throw new Error('Ordine con paths: la generazione dai tracciati congelati non è ancora disponibile.');
 
-  let raster: TextRaster;
-  let graph: SkeletonGraph;
-  if (current.source.kind === 'text') {
-    const input: RasterizeInput = {
-      text: current.source.text,
-      fontId: current.source.fontId,
-      heightMm: current.heightMm,
-    };
-    const entry = getFont(current.source.fontId);
-    if (!entry) throw new Error(`Font sconosciuto: "${current.source.fontId}"`);
-    const laid = entry.kind === 'stroke' ? await layoutStroke(entry, input, read) : null;
-    raster = laid ? laid.raster : await rasterize(input, read);
-    graph = laid ? laid.graph : buildGraph(raster);
-  } else if (current.source.format === 'svg') {
-    const laid = layoutSvg(current.source, current.heightMm);
-    raster = laid.raster;
-    graph = laid.graph;
+  let glyphs: GlyphInfo[] = [];
+  let strip: StripModel;
+  if (current.paths != null) {
+    strip = stripFromPaths(current, params, warnings);
   } else {
-    const laid = layoutRaster(current.source, current.heightMm);
-    raster = laid.raster;
-    graph = laid.graph;
+    let raster: TextRaster;
+    let graph: SkeletonGraph;
+    if (current.source.kind === 'text') {
+      const input: RasterizeInput = {
+        text: current.source.text,
+        fontId: current.source.fontId,
+        heightMm: current.heightMm,
+      };
+      const entry = getFont(current.source.fontId);
+      if (!entry) throw new Error(`Font sconosciuto: "${current.source.fontId}"`);
+      const laid = entry.kind === 'stroke' ? await layoutStroke(entry, input, read) : null;
+      raster = laid ? laid.raster : await rasterize(input, read);
+      graph = laid ? laid.graph : buildGraph(raster);
+    } else if (current.source.format === 'svg') {
+      const laid = layoutSvg(current.source, current.heightMm);
+      raster = laid.raster;
+      graph = laid.graph;
+    } else {
+      const laid = layoutRaster(current.source, current.heightMm);
+      raster = laid.raster;
+      graph = laid.graph;
+    }
+    warnings.push(...raster.warnings);
+    glyphs = raster.glyphs;
+    // stripMode "walls" e "centerline" usano gli archi del grafo: niente mediana.
+    strip = buildStrip(
+      { nodes: graph.nodes, edges: graph.edges, strokeWidthMm: graph.strokeWidthMm },
+      params,
+      current.heightMm,
+    );
   }
-  warnings.push(...raster.warnings);
-  // stripMode "walls" e "centerline" usano gli archi del grafo: niente mediana.
-  const strip = buildStrip(
-    { nodes: graph.nodes, edges: graph.edges, strokeWidthMm: graph.strokeWidthMm },
-    params,
-    current.heightMm,
-  );
   const coverage = coverSign({
-    glyphs: raster.glyphs,
+    glyphs,
     paths: strip.paths,
     gaps: strip.gaps,
     excluded: strip.excluded,
@@ -142,6 +197,7 @@ export async function generateSign(order: SignOrder | OrderV1, read?: FontBytesR
       ledGapMm: ledToDiffuserMm(params),
       bom: strip.bom,
       warnings,
+      segments: editSegments(strip),
     };
   } finally {
     housing.solid.delete();

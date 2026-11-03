@@ -1,10 +1,16 @@
 // Cliente: testo, font, altezza, colore e anteprima 3D (SPEC §1).
-import { DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION } from '../config';
+import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
+import { meshToStl } from '../export/stl';
+import type { EditSegment } from '../editor/paths';
+import { scalePaths } from '../editor/paths';
+import type { PathEditor } from '../editor/editor';
 import { FONTS } from '../fonts/registry';
-import type { SignOrder } from '../order/schema';
+import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
 import type { TraceMode } from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
+import { copy } from './copy.it';
+import { stlFileName } from './signSlug';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -37,7 +43,15 @@ app.innerHTML = `
       <label>Cornice mm <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}"></label>
     </p>
     <div id="stage"></div>
-    <p id="preview-status">Generazione…</p>
+    <p class="editor-actions">
+      <button type="button" id="edit-paths" disabled>Modifica tracciati</button>
+      <button type="button" id="restore-paths" disabled>Ripristina originale</button>
+      <button type="button" id="submit-order">Invio</button>
+      ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
+    </p>
+    <canvas id="path-editor" hidden></canvas>
+    <div id="path-toolbar" hidden></div>
+    <p id="preview-status" data-generation="0">Generazione…</p>
     <div class="preview-controls">
       <fieldset>
         <legend>Vista</legend>
@@ -57,6 +71,28 @@ app.innerHTML = `
 
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
+const editButton = document.querySelector<HTMLButtonElement>('#edit-paths')!;
+const restoreButton = document.querySelector<HTMLButtonElement>('#restore-paths')!;
+const submitButton = document.querySelector<HTMLButtonElement>('#submit-order')!;
+const downloadButton = document.querySelector<HTMLButtonElement>('#download-stl');
+const orderActions = document.querySelector<HTMLElement>('.editor-actions')!;
+Object.assign(orderActions.style, {
+  position: 'fixed',
+  left: '0',
+  right: '0',
+  bottom: '0',
+  zIndex: '5',
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '8px',
+  margin: '0',
+  padding: '10px 12px',
+  background: '#f7f4ee',
+  boxShadow: '0 -1px 0 rgba(0,0,0,0.15)',
+});
+document.body.style.paddingBottom = '64px';
+const editorCanvas = document.querySelector<HTMLCanvasElement>('#path-editor')!;
+const editorToolbar = document.querySelector<HTMLElement>('#path-toolbar')!;
 const textInput = document.querySelector<HTMLInputElement>('input[name="text"]')!;
 const fontInput = document.querySelector<HTMLSelectElement>('select[name="fontId"]')!;
 const imageInput = document.querySelector<HTMLInputElement>('input[name="image"]')!;
@@ -120,9 +156,15 @@ scene.setColor(color.value);
 scene.setMode('accesa');
 scene.setEffect('fisso');
 
+let previewDiffuser = true;
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
   input.addEventListener('change', () => {
-    if (input.checked) scene.setMode(input.value as PreviewMode);
+    if (!input.checked) return;
+    scene.setMode(input.value as PreviewMode);
+    const next = input.value !== 'senza diffusore';
+    if (next === previewDiffuser) return;
+    previewDiffuser = next;
+    void showSign();
   });
 }
 color.addEventListener('input', () => scene.setColor(color.value));
@@ -132,9 +174,131 @@ for (const input of document.querySelectorAll<HTMLInputElement>('input[name="eff
   });
 }
 
+const DISCARD = 'Cambiare testo, font o immagine scarta le modifiche ai tracciati. Continuare?';
+
+let edited: { paths: OrderPath[]; crossings: OrderCrossing[] } | null = null;
+let sourceSegments: EditSegment[] = [];
+let editor: PathEditor | null = null;
+let liveBlocked = false;
+let workerBlocked = false;
+let editEpoch = 0;
+let heightAtEdit = Number(heightInput.value);
+const sourceMemory = {
+  text: textInput.value,
+  font: fontInput.value,
+  kind: 'text',
+  trace: traceInput.value,
+  threshold: thresholdInput.value,
+  invert: invertInput.checked,
+};
+
+function blocksSubmit(warnings: readonly string[]): boolean {
+  return warnings.some(
+    (warning) =>
+      warning.includes('curva troppo stretta') ||
+      warning.includes('sotto il passo di taglio') ||
+      warning.startsWith('Sagome che si fondono'),
+  );
+}
+
+function updateSubmit(): void {
+  submitButton.disabled = liveBlocked || workerBlocked;
+}
+
+function rememberSource(): void {
+  sourceMemory.text = textInput.value;
+  sourceMemory.font = fontInput.value;
+  sourceMemory.kind = imageMode() ? 'image' : 'text';
+  sourceMemory.trace = traceInput.value;
+  sourceMemory.threshold = thresholdInput.value;
+  sourceMemory.invert = invertInput.checked;
+}
+
+function revertSource(): void {
+  textInput.value = sourceMemory.text;
+  fontInput.value = sourceMemory.font;
+  traceInput.value = sourceMemory.trace;
+  thresholdInput.value = sourceMemory.threshold;
+  thresholdValue.textContent = sourceMemory.threshold;
+  invertInput.checked = sourceMemory.invert;
+  const kind = document.querySelector<HTMLInputElement>(`input[name="sourceKind"][value="${sourceMemory.kind}"]`);
+  if (kind) kind.checked = true;
+  syncSourceFields();
+}
+
+function dropEdits(): void {
+  edited = null;
+  editor?.close();
+  editor = null;
+  liveBlocked = false;
+  restoreButton.disabled = true;
+  updateSubmit();
+}
+
+function keepOrDrop(changed: boolean): boolean {
+  if (!edited || !changed) return true;
+  if (!window.confirm(DISCARD)) {
+    revertSource();
+    return false;
+  }
+  dropEdits();
+  rememberSource();
+  return true;
+}
+
+interface ReadyStl {
+  housing: ArrayBuffer;
+  diffuser: ArrayBuffer;
+  label: string;
+  heightMm: number;
+  diffuserOn: boolean;
+}
+
+let readyStl: ReadyStl | null = null;
+
+function clearStl(): void {
+  readyStl = null;
+  if (!downloadButton) return;
+  downloadButton.disabled = true;
+  downloadButton.textContent = copy.buttons.generating;
+  delete downloadButton.dataset.ready;
+}
+
+/** Il risultato in volo non è più quello chiesto: non si pubblica la mesh vecchia. */
+function invalidateStl(): void {
+  request += 1;
+  clearStl();
+}
+
+function saveStl(name: string, buffer: ArrayBuffer): void {
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileLabel(): string {
+  if (!imageMode()) return textInput.value.trim();
+  const name = raster?.name ?? svgName;
+  return name.replace(/\.[^.]+$/, '');
+}
+
+downloadButton?.addEventListener('click', () => {
+  const ready = readyStl;
+  if (!ready || downloadButton?.disabled) return;
+  saveStl(stlFileName(ready.label, ready.heightMm, 'housing'), ready.housing);
+  if (ready.diffuserOn) saveStl(stlFileName(ready.label, ready.heightMm, 'diffuser'), ready.diffuser);
+});
+
 let request = 0;
 async function showSign(): Promise<void> {
   const id = ++request;
+  const epoch = editEpoch;
+  clearStl();
   syncSourceFields();
   const heightMm = Number(heightInput.value);
   if (!(heightMm > 0)) {
@@ -174,8 +338,8 @@ async function showSign(): Promise<void> {
       heightMm,
       color: color.value,
       params: { WALL: wallMm() },
-      paths: null,
-      crossings: [],
+      paths: edited?.paths ?? null,
+      crossings: edited?.crossings ?? [],
     };
   } else if (image && svgMarkup) {
     try {
@@ -188,8 +352,8 @@ async function showSign(): Promise<void> {
         heightMm,
         color: color.value,
         params: { WALL: wallMm() },
-        paths: null,
-        crossings: [],
+        paths: edited?.paths ?? null,
+        crossings: edited?.crossings ?? [],
       };
     } catch (err) {
       if (id !== request) return;
@@ -204,14 +368,30 @@ async function showSign(): Promise<void> {
       heightMm,
       color: color.value,
       params: { WALL: wallMm() },
-      paths: null,
-      crossings: [],
+      paths: edited?.paths ?? null,
+      crossings: edited?.crossings ?? [],
     };
   }
   status.textContent = 'Generazione…';
+  const label = fileLabel();
+  const withDiffuser = previewDiffuser;
   try {
     const result = await generator.generate(order);
-    if (id !== request) return;
+    if (id !== request || epoch !== editEpoch) return;
+    if (!edited) sourceSegments = result.segments;
+    if (downloadButton && result.housingMesh) {
+      readyStl = {
+        housing: meshToStl(result.housingMesh, 'housing'),
+        diffuser: meshToStl(result.diffuserMesh, 'diffuser'),
+        label,
+        heightMm,
+        diffuserOn: withDiffuser,
+      };
+      downloadButton.disabled = false;
+      downloadButton.textContent = copy.buttons.downloadCustomerStl;
+      downloadButton.dataset.ready = stlFileName(label, heightMm, 'housing');
+    }
+    editButton.disabled = sourceSegments.length === 0 && !edited;
     scene.setSign({
       housing: result.housingMesh,
       diffuser: result.diffuserMesh,
@@ -219,6 +399,9 @@ async function showSign(): Promise<void> {
       ledGapMm: result.ledGapMm,
     });
     scene.setColor(color.value);
+    status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
+    workerBlocked = blocksSubmit(result.warnings);
+    updateSubmit();
     const leds = result.lightPoints.length > 0 ? `${result.lightPoints.length} LED` : 'Nessun LED sulla striscia.';
     const shown = result.warnings.filter((warning) => {
       if (/bassa risoluzione|tratto non uniforme|^Puntino|^Trattino fuori/.test(warning)) return true;
@@ -237,14 +420,29 @@ const schedule = (): void => {
   window.clearTimeout(timer);
   timer = window.setTimeout(() => void showSign(), 350);
 };
-textInput.addEventListener('input', schedule);
-fontInput.addEventListener('change', () => void showSign());
+textInput.addEventListener('input', () => {
+  if (!keepOrDrop(textInput.value !== sourceMemory.text)) return;
+  invalidateStl();
+  schedule();
+});
+fontInput.addEventListener('change', () => {
+  if (!keepOrDrop(fontInput.value !== sourceMemory.font)) return;
+  void showSign();
+});
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="sourceKind"]')) {
-  input.addEventListener('change', () => void showSign());
+  input.addEventListener('change', () => {
+    const kind = imageMode() ? 'image' : 'text';
+    if (!keepOrDrop(kind !== sourceMemory.kind)) return;
+    void showSign();
+  });
 }
-traceInput.addEventListener('change', () => void showSign());
+traceInput.addEventListener('change', () => {
+  if (!keepOrDrop(traceInput.value !== sourceMemory.trace)) return;
+  void showSign();
+});
 thresholdInput.addEventListener('input', () => {
   thresholdValue.textContent = thresholdInput.value;
+  if (!keepOrDrop(thresholdInput.value !== sourceMemory.threshold)) return;
   if (!raster) return;
   const built = rebuildRaster(raster.luminance, raster.width, raster.height, {
     name: raster.name,
@@ -255,13 +453,37 @@ thresholdInput.addEventListener('input', () => {
   if (built) paintThresholdPreview(thresholdPreview, built.binary);
   schedule();
 });
-invertInput.addEventListener('change', () => void showSign());
+invertInput.addEventListener('change', () => {
+  if (!keepOrDrop(invertInput.checked !== sourceMemory.invert)) return;
+  void showSign();
+});
 imageInput.addEventListener('change', () => {
   const file = imageInput.files?.[0];
   if (!file) return;
+  if (!keepOrDrop(true)) {
+    imageInput.value = '';
+    return;
+  }
   void loadImage(file);
 });
-heightInput.addEventListener('change', () => void showSign());
+heightInput.addEventListener('change', () => {
+  const next = Number(heightInput.value);
+  if (edited && next > 0 && heightAtEdit > 0 && Math.abs(next - heightAtEdit) > 1e-9) {
+    const factor = next / heightAtEdit;
+    edited = {
+      paths: scalePaths(edited.paths, factor),
+      crossings: edited.crossings.map((crossing) => ({
+        at: [Math.round(crossing.at[0] * factor * 1000) / 1000, Math.round(crossing.at[1] * factor * 1000) / 1000],
+        under: crossing.under,
+      })),
+    };
+    heightAtEdit = next;
+    editor?.load(edited.paths, edited.crossings);
+  } else if (next > 0) {
+    heightAtEdit = next;
+  }
+  void showSign();
+});
 wallInput.addEventListener('input', schedule);
 wallInput.addEventListener('change', () => {
   wallInput.value = wallMm().toFixed(1);
@@ -319,6 +541,64 @@ async function loadImage(file: File): Promise<void> {
   } catch (err) {
     syncSourceFields();
     status.textContent = err instanceof Error ? err.message : String(err);
+  }
+}
+
+editButton.addEventListener('click', () => void openEditor());
+restoreButton.addEventListener('click', () => {
+  if (!edited) return;
+  dropEdits();
+  void showSign();
+});
+submitButton.addEventListener('click', () => {
+  if (submitButton.disabled) return;
+  status.dataset.sent = 'true';
+});
+
+async function openEditor(): Promise<void> {
+  if (sourceSegments.length === 0 && !edited) return;
+  editButton.disabled = true;
+  try {
+  if (!editor) {
+    const { openPathEditor } = await import('../editor/editor');
+    editor = await openPathEditor({
+      canvas: editorCanvas,
+      toolbar: editorToolbar,
+      getParams: () => resolveParams({ WALL: wallMm() }),
+      onCommit(paths, crossings) {
+        edited = { paths, crossings };
+        restoreButton.disabled = false;
+        editEpoch += 1;
+        workerBlocked = false;
+        updateSubmit();
+        window.clearTimeout(timer);
+        const epoch = editEpoch;
+        timer = window.setTimeout(() => {
+          if (epoch === editEpoch) void showSign();
+        }, 300);
+      },
+      onLive(blocked) {
+        editEpoch += 1;
+        liveBlocked = blocked;
+        workerBlocked = false;
+        updateSubmit();
+      },
+    });
+  } else {
+    editor.show();
+  }
+  if (!edited) {
+    const paths = editor.freeze(sourceSegments);
+    edited = { paths, crossings: [] };
+    heightAtEdit = Number(heightInput.value);
+    rememberSource();
+  }
+  editor.load(edited.paths, edited.crossings);
+  restoreButton.disabled = false;
+  editEpoch += 1;
+  void showSign();
+  } finally {
+    editButton.disabled = sourceSegments.length === 0 && !edited;
   }
 }
 

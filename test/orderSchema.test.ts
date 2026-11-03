@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { meshToStl } from '../src/export/stl';
 import type { FontBytesReader } from '../src/fonts/loadFont';
-import { migrateOrder, type OrderV1, type SignOrder } from '../src/order/schema';
+import { DEFAULT_CUSTOMER, migrateOrder, type OrderV1, type SignOrder } from '../src/order/schema';
 import { generateSign } from '../src/worker/generate';
 
 const readPublic: FontBytesReader = async (file) => {
@@ -18,8 +18,8 @@ const sameBytes = (a: ArrayBuffer, b: ArrayBuffer): boolean => {
   return true;
 };
 
-describe('ordine v2', () => {
-  it('un ordine v1 migrato produce gli stessi STL e la stessa BOM', async () => {
+describe('ordine v3', () => {
+  it('un ordine v1 e uno v2 migrati a v3 producono gli stessi STL e la stessa BOM', async () => {
     const v1: OrderV1 = {
       schemaVersion: 1,
       generatorVersion: '0.1.0',
@@ -29,7 +29,7 @@ describe('ordine v2', () => {
       color: '#ff2fd6',
       params: { WALL: 3 },
     };
-    const original: SignOrder = {
+    const v2: SignOrder = {
       schemaVersion: 2,
       generatorVersion: v1.generatorVersion,
       source: { kind: 'text', text: v1.text, fontId: v1.fontId },
@@ -39,14 +39,24 @@ describe('ordine v2', () => {
       paths: null,
       crossings: [],
     };
-    const migrated = migrateOrder(v1);
-    expect(migrated).toEqual(original);
-    expect(migrateOrder(migrated)).toEqual(migrated);
+    const fromV1 = migrateOrder(v1);
+    const fromV2 = migrateOrder(v2);
+    expect(fromV1).toEqual(fromV2);
+    expect(fromV1.schemaVersion).toBe(3);
+    expect(fromV1.customer).toEqual(DEFAULT_CUSTOMER);
+    expect(fromV1.sizePreset).toBeNull();
+    expect(fromV1.pricingVersion).toBeNull();
+    expect(migrateOrder(fromV1)).toEqual(fromV1);
 
-    const fromV1 = await generateSign(v1, readPublic);
-    const fromMigrated = await generateSign(migrated, readPublic);
-    expect(sameBytes(meshToStl(fromV1.housingMesh), meshToStl(fromMigrated.housingMesh))).toBe(true);
-    expect(sameBytes(meshToStl(fromV1.diffuserMesh), meshToStl(fromMigrated.diffuserMesh))).toBe(true);
-    expect(fromMigrated.bom).toEqual(fromV1.bom);
+    const rawV1 = await generateSign(v1, readPublic);
+    const rawV2 = await generateSign(v2, readPublic);
+    const migratedV1 = await generateSign(fromV1, readPublic);
+    const migratedV2 = await generateSign(fromV2, readPublic);
+    expect(sameBytes(meshToStl(rawV1.housingMesh), meshToStl(migratedV1.housingMesh))).toBe(true);
+    expect(sameBytes(meshToStl(rawV1.diffuserMesh), meshToStl(migratedV1.diffuserMesh))).toBe(true);
+    expect(migratedV1.bom).toEqual(rawV1.bom);
+    expect(sameBytes(meshToStl(rawV2.housingMesh), meshToStl(migratedV2.housingMesh))).toBe(true);
+    expect(sameBytes(meshToStl(rawV2.diffuserMesh), meshToStl(migratedV2.diffuserMesh))).toBe(true);
+    expect(migratedV2.bom).toEqual(rawV2.bom);
   });
 });

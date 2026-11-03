@@ -1,4 +1,4 @@
-// Ordine v2 (SPEC §6). Un ordine v1 si legge come v2: stessi file.
+// Ordine v3 (SPEC §6). v1 si legge come v2, poi v2 come v3: stessi STL e stessa BOM.
 import type { Params } from '../config';
 
 export interface OrderV1 {
@@ -77,6 +77,7 @@ export interface OrderCrossing {
   under: string;
 }
 
+/** Ordine v2: geometria, senza le scelte del cliente. */
 export interface SignOrder {
   schemaVersion: 2;
   generatorVersion: string;
@@ -87,6 +88,42 @@ export interface SignOrder {
   /** null finché il cliente non congela i tracciati. */
   paths: OrderPath[] | null;
   crossings: OrderCrossing[];
+}
+
+export type SizePreset = 'S' | 'M' | 'L' | 'XL';
+
+export type LightEffect = 'colore fisso' | 'arcobaleno';
+
+/** Scelte che non cambiano la geometria (SPEC §6). */
+export interface CustomerChoices {
+  effect: LightEffect;
+  diffuser: boolean;
+  mount: 'wall';
+  plug: 'EU';
+  proof: boolean;
+}
+
+export const DEFAULT_CUSTOMER: Readonly<CustomerChoices> = Object.freeze({
+  effect: 'colore fisso',
+  diffuser: true,
+  mount: 'wall',
+  plug: 'EU',
+  proof: true,
+});
+
+/** Ordine v3. `sizePreset` è informativo: fa fede `heightMm`. */
+export interface SignOrderV3 {
+  schemaVersion: 3;
+  generatorVersion: string;
+  pricingVersion: string | null;
+  source: OrderSource;
+  heightMm: number;
+  sizePreset: SizePreset | null;
+  color: string;
+  params: Partial<Params>;
+  paths: OrderPath[] | null;
+  crossings: OrderCrossing[];
+  customer: CustomerChoices;
 }
 
 function copySource(source: OrderSource): OrderSource {
@@ -136,31 +173,50 @@ function copyPath(path: OrderPath): OrderPath {
   };
 }
 
-/** Legge un ordine v1 come v2. Un ordine già v2 resta v2, con copie dei campi. */
-export function migrateOrder(order: OrderV1 | SignOrder): SignOrder {
-  if (order.schemaVersion === 2) {
+function copyCrossing(crossing: OrderCrossing): OrderCrossing {
+  return { at: [crossing.at[0], crossing.at[1]], under: crossing.under };
+}
+
+function asV2(order: OrderV1 | SignOrder | SignOrderV3): SignOrder {
+  if (order.schemaVersion === 1) {
     return {
       schemaVersion: 2,
       generatorVersion: order.generatorVersion,
-      source: copySource(order.source),
+      source: { kind: 'text', text: order.text, fontId: order.fontId },
       heightMm: order.heightMm,
       color: order.color,
-      params: { ...order.params },
-      paths: order.paths ? order.paths.map(copyPath) : null,
-      crossings: order.crossings.map((crossing) => ({
-        at: [crossing.at[0], crossing.at[1]],
-        under: crossing.under,
-      })),
+      params: { ...(order.params ?? {}) },
+      paths: null,
+      crossings: [],
     };
   }
   return {
     schemaVersion: 2,
     generatorVersion: order.generatorVersion,
-    source: { kind: 'text', text: order.text, fontId: order.fontId },
+    source: copySource(order.source),
     heightMm: order.heightMm,
     color: order.color,
-    params: { ...(order.params ?? {}) },
-    paths: null,
-    crossings: [],
+    params: { ...order.params },
+    paths: order.paths ? order.paths.map(copyPath) : null,
+    crossings: order.crossings.map(copyCrossing),
+  };
+}
+
+/** v1 → v2 → v3. I campi del cliente mancanti prendono i default; la geometria non cambia. */
+export function migrateOrder(order: OrderV1 | SignOrder | SignOrderV3): SignOrderV3 {
+  const geometry = asV2(order);
+  const customer = order.schemaVersion === 3 ? { ...order.customer } : { ...DEFAULT_CUSTOMER };
+  return {
+    schemaVersion: 3,
+    generatorVersion: geometry.generatorVersion,
+    pricingVersion: order.schemaVersion === 3 ? order.pricingVersion : null,
+    source: geometry.source,
+    heightMm: geometry.heightMm,
+    sizePreset: order.schemaVersion === 3 ? order.sizePreset : null,
+    color: geometry.color,
+    params: geometry.params,
+    paths: geometry.paths,
+    crossings: geometry.crossings,
+    customer,
   };
 }
