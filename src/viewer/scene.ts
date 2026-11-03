@@ -182,6 +182,71 @@ export function mountSignScene(host: HTMLElement): SignScene {
 
   const rainbowOn = (): boolean => rainbowAsked;
 
+  // Dichiarati prima di resize(): l'observer chiama resize subito, a insegna ancora assente.
+  let viewBox: Box3 | null = null;
+
+  const fitDistance = (size: Vector3): number => {
+    const tan = Math.tan((camera.fov * Math.PI) / 360);
+    const aspect = Math.max(camera.aspect, 0.2);
+    const distForHeight = Math.max(size.y, 1) / 2 / tan;
+    const distForWidth = Math.max(size.x, 1) / 2 / (tan * aspect);
+    return Math.max(distForHeight, distForWidth, 40) * 1.28;
+  };
+
+  const aimCamera = (box: Box3, resetAngle: boolean): void => {
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const distance = fitDistance(size);
+    controls.target.copy(center);
+    if (resetAngle) {
+      controls.minAzimuthAngle = -Infinity;
+      controls.maxAzimuthAngle = Infinity;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
+      camera.position.set(center.x, center.y, center.z + distance);
+    } else {
+      const offset = new Vector3().subVectors(camera.position, center);
+      if (offset.lengthSq() < 1) offset.set(0, 0, 1);
+      offset.setLength(distance);
+      camera.position.copy(center).add(offset);
+    }
+    camera.near = Math.max(0.1, distance / 200);
+    camera.far = Math.max(distance * 30, 100);
+    camera.updateProjectionMatrix();
+    controls.update();
+    if (!resetAngle) return;
+    const azimuth = controls.getAzimuthalAngle();
+    const polar = controls.getPolarAngle();
+    controls.minAzimuthAngle = azimuth - FRONT_LIMIT;
+    controls.maxAzimuthAngle = azimuth + FRONT_LIMIT;
+    controls.minPolarAngle = Math.max(0.05, polar - FRONT_LIMIT);
+    controls.maxPolarAngle = Math.min(Math.PI - 0.05, polar + FRONT_LIMIT);
+  };
+
+  const frame = (box: Box3): void => {
+    viewBox = box.clone();
+    aimCamera(box, true);
+
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const span = Math.max(size.x, size.y, 40);
+    wall.geometry.dispose();
+    const plane = new BufferGeometry();
+    const z = box.min.z - 12;
+    const w = span * 4;
+    const positions = new Float32Array([
+      center.x - w, center.y - w, z,
+      center.x + w, center.y - w, z,
+      center.x + w, center.y + w, z,
+      center.x - w, center.y - w, z,
+      center.x + w, center.y + w, z,
+      center.x - w, center.y + w, z,
+    ]);
+    plane.setAttribute('position', new BufferAttribute(positions, 3));
+    plane.computeVertexNormals();
+    wall.geometry = plane;
+  };
+
   const resize = (): void => {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, Math.round(host.clientHeight || window.innerHeight * 0.7));
@@ -190,6 +255,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
     bloom.setSize(Math.max(1, Math.floor(width * bloomScale)), Math.max(1, Math.floor(height * bloomScale)));
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    if (viewBox) aimCamera(viewBox, false);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(host);
@@ -274,44 +340,6 @@ export function mountSignScene(host: HTMLElement): SignScene {
     renderer.render(glowScene, glowCamera);
     renderer.setRenderTarget(previous);
     renderer.autoClear = autoClear;
-  };
-
-  const frame = (box: Box3): void => {
-    const center = box.getCenter(new Vector3());
-    const size = box.getSize(new Vector3());
-    const span = Math.max(size.x, size.y, 40);
-    controls.minAzimuthAngle = -Infinity;
-    controls.maxAzimuthAngle = Infinity;
-    controls.minPolarAngle = 0;
-    controls.maxPolarAngle = Math.PI;
-    controls.target.copy(center);
-    camera.position.set(center.x, center.y, center.z + span * 1.35);
-    camera.near = Math.max(0.1, span / 200);
-    camera.far = span * 30;
-    camera.updateProjectionMatrix();
-    controls.update();
-    const azimuth = controls.getAzimuthalAngle();
-    const polar = controls.getPolarAngle();
-    controls.minAzimuthAngle = azimuth - FRONT_LIMIT;
-    controls.maxAzimuthAngle = azimuth + FRONT_LIMIT;
-    controls.minPolarAngle = Math.max(0.05, polar - FRONT_LIMIT);
-    controls.maxPolarAngle = Math.min(Math.PI - 0.05, polar + FRONT_LIMIT);
-
-    wall.geometry.dispose();
-    const plane = new BufferGeometry();
-    const z = box.min.z - 12;
-    const w = span * 4;
-    const positions = new Float32Array([
-      center.x - w, center.y - w, z,
-      center.x + w, center.y - w, z,
-      center.x + w, center.y + w, z,
-      center.x - w, center.y - w, z,
-      center.x + w, center.y + w, z,
-      center.x - w, center.y + w, z,
-    ]);
-    plane.setAttribute('position', new BufferAttribute(positions, 3));
-    plane.computeVertexNormals();
-    wall.geometry = plane;
   };
 
   const setLights = (next: readonly LightPoint[]): void => {

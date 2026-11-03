@@ -1,4 +1,5 @@
-// Cliente: testo, font, altezza, colore e anteprima 3D (SPEC §1).
+// Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
+import './customer.css';
 import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
@@ -11,86 +12,170 @@ import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/r
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
 import { stlFileName } from './signSlug';
+import { SIZES } from './sizes';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
 const WALL_MIN_MM = 1.6;
 const WALL_MAX_MM = 5;
+const HEIGHT_MIN_MM = 40;
+const HEIGHT_MAX_MM = 800;
+const SWATCHES = ['#ff2fd6', '#ff3b30', '#ff9500', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#bf5af2', '#f5f5f7'] as const;
+
+const TITLES: Record<string, string> = {
+  text: 'Testo',
+  font: 'Font',
+  size: 'Misura',
+  color: 'Colore',
+  image: 'Immagine',
+  more: 'Altro',
+  request: 'Richiedi',
+};
+
+function icon(path: string): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`;
+}
+
+const ICONS: Record<string, string> = {
+  text: icon('M5 6h14M5 12h14M5 18h9'),
+  font: icon('M6 19 L12 5 L18 19M8.5 14h7'),
+  size: icon('M4 20 L20 4M14 4h6v6M4 14v6h6'),
+  color: icon('M12 5a7 7 0 1 0 0.01 0'),
+  image: icon('M4 6h16v12H4zM4 15l4-4 3 3 3-4 6 5'),
+  more: icon('M6 12h.01M12 12h.01M18 12h.01'),
+};
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const fontOptions = FONTS.map((font) => `<option value="${font.id}">${font.name}</option>`).join('');
+const fontCards = FONTS.map((font, index) => `
+  <button type="button" class="font-card" data-font="${font.id}" aria-pressed="${index === 0 ? 'true' : 'false'}">
+    <span class="font-sample">Ciao</span>
+    <span class="font-name">${font.name}</span>
+  </button>`).join('');
+const sizeChips = SIZES.map((size) => `
+  <button type="button" class="size-chip" data-size="${size.heightMm}" aria-pressed="${size.id === 'M' ? 'true' : 'false'}">
+    ${size.id}<span>${size.heightMm / 10} cm</span>
+  </button>`).join('');
+const swatches = SWATCHES.map((hex) => `
+  <button type="button" class="swatch" data-color="${hex}" aria-label="${hex}" aria-pressed="${hex === '#ff2fd6' ? 'true' : 'false'}"></button>`).join('');
+const tools = [
+  ['text', 'Testo'],
+  ['font', 'Font'],
+  ['size', 'Misura'],
+  ['color', 'Colore'],
+  ['image', 'Immagine'],
+  ['more', 'Altro'],
+] as const;
+
 app.innerHTML = `
-  <h1>Configuratore insegne neon</h1>
-  <section class="preview">
-    <p class="preview-fields">
-      <span>
-        <label><input type="radio" name="sourceKind" value="text" checked> Testo</label>
-        <label><input type="radio" name="sourceKind" value="image"> Immagine</label>
-      </span>
-      <label data-source="text">Testo <input name="text" value="Ciao" autocomplete="off"></label>
-      <label data-source="text">Font <select name="fontId">${fontOptions}</select></label>
-      <label data-source="image" hidden>File <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg"></label>
-      <label data-source="trace" hidden>Traccia
-        <select name="trace">
-          <option value="centerline" selected>Linea centrale</option>
-          <option value="outline">Contorno</option>
-        </select>
-      </label>
-      <label data-source="raster" hidden>Soglia <input name="threshold" type="range" min="0" max="255" step="1" value="128"> <span id="threshold-value">128</span></label>
-      <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
-      <canvas id="threshold-preview" data-source="raster" hidden></canvas>
-      <label>Altezza mm <input name="heightMm" type="number" min="40" max="800" value="120"></label>
-      <label>Cornice mm <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}"></label>
-    </p>
-    <div id="stage"></div>
-    <p class="editor-actions">
-      <button type="button" id="edit-paths" disabled>Modifica tracciati</button>
-      <button type="button" id="restore-paths" disabled>Ripristina originale</button>
-      <button type="button" id="submit-order">Invio</button>
-      ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
-    </p>
-    <canvas id="path-editor" hidden></canvas>
-    <div id="path-toolbar" hidden></div>
-    <p id="preview-status" data-generation="0">Generazione…</p>
-    <div class="preview-controls">
-      <fieldset>
-        <legend>Vista</legend>
-        <label><input type="radio" name="mode" value="spenta"> Spenta</label>
-        <label><input type="radio" name="mode" value="accesa" checked> Accesa</label>
-        <label><input type="radio" name="mode" value="senza diffusore"> Senza diffusore</label>
-      </fieldset>
-      <fieldset>
-        <legend>Effetto</legend>
-        <label><input type="radio" name="effect" value="fisso" checked> Colore fisso</label>
-        <label><input type="radio" name="effect" value="arcobaleno"> Arcobaleno</label>
-      </fieldset>
-      <label>Colore <input type="color" name="color" value="#ff2fd6"></label>
+  <div class="shell" data-sheet="">
+    <h1 class="sr-only">Configuratore insegne neon</h1>
+    <div class="sr-only">
+      <input type="radio" name="sourceKind" value="text" checked>
+      <input type="radio" name="sourceKind" value="image">
     </div>
-  </section>
+    <div class="stage-wrap">
+      <div id="stage"></div>
+      <canvas id="path-editor" hidden></canvas>
+      <div class="hud">
+        <div class="mode-switch" role="radiogroup" aria-label="Vista">
+          <label><input type="radio" name="mode" value="accesa" checked><span>Accesa</span></label>
+          <label><input type="radio" name="mode" value="spenta"><span>Spenta</span></label>
+        </div>
+        <button type="button" id="open-request" aria-pressed="false">Richiedi</button>
+      </div>
+      <p id="preview-status" data-generation="0">Generazione…</p>
+    </div>
+    <section class="sheet" aria-label="Strumento">
+      <header class="sheet-bar">
+        <h2 id="sheet-title">Testo</h2>
+        <button type="button" id="sheet-close">${copy.buttons.editorDone}</button>
+      </header>
+      <div class="sheet-body">
+        <div class="pane" data-pane="text" hidden>
+          <input name="text" value="Ciao" autocomplete="off" aria-label="Testo">
+        </div>
+        <div class="pane" data-pane="font" hidden>
+          <div class="font-row">${fontCards}</div>
+          <select name="fontId" hidden>${fontOptions}</select>
+        </div>
+        <div class="pane" data-pane="size" hidden>
+          <div class="sizes">${sizeChips}</div>
+          <div class="height-step">
+            <button type="button" data-height-step="-10" aria-label="Meno 10 millimetri">−</button>
+            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="Altezza in millimetri">
+            <button type="button" data-height-step="10" aria-label="Più 10 millimetri">+</button>
+          </div>
+        </div>
+        <div class="pane" data-pane="color" hidden>
+          <div class="swatches">${swatches}</div>
+          <label class="color-free">Colore <input type="color" name="color" value="#ff2fd6"></label>
+          <div class="choice" role="radiogroup" aria-label="Effetto">
+            <label><input type="radio" name="effect" value="fisso" checked><span>Colore fisso</span></label>
+            <label><input type="radio" name="effect" value="arcobaleno"><span>Arcobaleno</span></label>
+          </div>
+        </div>
+        <div class="pane" data-pane="image" hidden>
+          <label class="image-drop">
+            <span>Carica un'immagine</span>
+            <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg">
+          </label>
+          <label class="field" data-source="trace" hidden>Traccia
+            <select name="trace">
+              <option value="centerline" selected>Linea centrale</option>
+              <option value="outline">Contorno</option>
+            </select>
+          </label>
+          <label class="field" data-source="raster" hidden>Soglia
+            <input name="threshold" type="range" min="0" max="255" step="1" value="128">
+            <span id="threshold-value">128</span>
+          </label>
+          <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
+          <canvas id="threshold-preview" data-source="raster" hidden></canvas>
+          <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
+        </div>
+        <div class="pane" data-pane="more" hidden>
+          <div class="choice" role="radiogroup" aria-label="Diffusore">
+            <label><input type="radio" name="diffuser" value="on" checked><span>Con diffusore</span></label>
+            <label><input type="radio" name="diffuser" value="off"><span>Senza diffusore</span></label>
+          </div>
+          <label class="field">Cornice mm
+            <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}">
+          </label>
+          <div class="actions">
+            <button type="button" id="edit-paths" disabled>${copy.buttons.editPaths}</button>
+            <button type="button" id="restore-paths" disabled>${copy.buttons.restorePaths}</button>
+          </div>
+          <div id="path-toolbar" hidden></div>
+        </div>
+        <div class="pane" data-pane="request" hidden>
+          <dl id="summary"></dl>
+          <p id="blocked-reason" hidden></p>
+          <div class="request-actions">
+            <button type="button" id="submit-order">${copy.buttons.send}</button>
+            ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
+          </div>
+        </div>
+      </div>
+    </section>
+    <nav class="dock" aria-label="Strumenti">
+      ${tools.map(([id, label]) => `<button type="button" data-tool="${id}" aria-pressed="false">${ICONS[id]}<span>${label}</span></button>`).join('')}
+    </nav>
+  </div>
 `;
 
+const shell = document.querySelector<HTMLElement>('.shell')!;
+const sheetTitle = document.querySelector<HTMLElement>('#sheet-title')!;
+const sheetClose = document.querySelector<HTMLButtonElement>('#sheet-close')!;
+const openRequest = document.querySelector<HTMLButtonElement>('#open-request')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
 const editButton = document.querySelector<HTMLButtonElement>('#edit-paths')!;
 const restoreButton = document.querySelector<HTMLButtonElement>('#restore-paths')!;
 const submitButton = document.querySelector<HTMLButtonElement>('#submit-order')!;
 const downloadButton = document.querySelector<HTMLButtonElement>('#download-stl');
-const orderActions = document.querySelector<HTMLElement>('.editor-actions')!;
-Object.assign(orderActions.style, {
-  position: 'fixed',
-  left: '0',
-  right: '0',
-  bottom: '0',
-  zIndex: '5',
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '8px',
-  margin: '0',
-  padding: '10px 12px',
-  background: '#f7f4ee',
-  boxShadow: '0 -1px 0 rgba(0,0,0,0.15)',
-});
-document.body.style.paddingBottom = '64px';
+const blockedReason = document.querySelector<HTMLElement>('#blocked-reason')!;
+const summary = document.querySelector<HTMLElement>('#summary')!;
 const editorCanvas = document.querySelector<HTMLCanvasElement>('#path-editor')!;
 const editorToolbar = document.querySelector<HTMLElement>('#path-toolbar')!;
 const textInput = document.querySelector<HTMLInputElement>('input[name="text"]')!;
@@ -103,12 +188,15 @@ const thresholdInput = document.querySelector<HTMLInputElement>('input[name="thr
 const thresholdValue = document.querySelector<HTMLElement>('#threshold-value')!;
 const invertInput = document.querySelector<HTMLInputElement>('input[name="invert"]')!;
 const thresholdPreview = document.querySelector<HTMLCanvasElement>('#threshold-preview')!;
-thresholdPreview.style.imageRendering = 'pixelated';
-thresholdPreview.style.background = '#111';
-thresholdPreview.style.maxWidth = '220px';
+const backToText = document.querySelector<HTMLButtonElement>('#back-to-text')!;
+const fontTool = document.querySelector<HTMLButtonElement>('[data-tool="font"]')!;
+const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
+const desktop = window.matchMedia('(min-width: 900px)');
 
 let svgMarkup: string | null = null;
 let svgName = 'immagine.svg';
+let lastTool = 'text';
+let blockReason = '';
 
 interface RasterSession {
   name: string;
@@ -120,6 +208,10 @@ interface RasterSession {
 
 let raster: RasterSession | null = null;
 
+function isDesktop(): boolean {
+  return desktop.matches;
+}
+
 function imageMode(): boolean {
   return document.querySelector<HTMLInputElement>('input[name="sourceKind"][value="image"]')!.checked;
 }
@@ -128,19 +220,24 @@ function traceMode(): TraceMode {
   return traceInput.value === 'outline' ? 'outline' : 'centerline';
 }
 
+function diffuserOn(): boolean {
+  return document.querySelector<HTMLInputElement>('input[name="diffuser"][value="on"]')!.checked;
+}
+
+function litOn(): boolean {
+  return document.querySelector<HTMLInputElement>('input[name="mode"][value="accesa"]')!.checked;
+}
+
 function syncSourceFields(): void {
   const image = imageMode();
   const hasRaster = image && raster != null;
   const hasImage = image && (raster != null || svgMarkup != null);
   for (const el of document.querySelectorAll<HTMLElement>('[data-source]')) {
     const slot = el.dataset.source;
-    const show =
-      (slot === 'text' && !image) ||
-      (slot === 'image' && image) ||
-      (slot === 'trace' && hasImage) ||
-      (slot === 'raster' && hasRaster);
+    const show = (slot === 'trace' && hasImage) || (slot === 'raster' && hasRaster);
     el.hidden = !show;
   }
+  fontTool.classList.toggle('is-dimmed', image);
 }
 
 function wallMm(): number {
@@ -148,26 +245,153 @@ function wallMm(): number {
   if (!Number.isFinite(n)) return DEFAULT_PARAMS.WALL;
   return Math.min(WALL_MAX_MM, Math.max(WALL_MIN_MM, n));
 }
-const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
+
+function cmLabel(mm: number): string {
+  const cm = Math.round((mm / 10) * 10) / 10;
+  return `${Number.isInteger(cm) ? String(cm) : cm.toFixed(1)} cm`;
+}
+
+function inkFor(hex: string): string {
+  const raw = hex.replace('#', '');
+  if (raw.length !== 6) return '#fffaf6';
+  const channel = (index: number): number => {
+    const value = Number.parseInt(raw.slice(index, index + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return luminance > 0.55 ? '#1c1916' : '#fffaf6';
+}
+
+function applyNeon(hex: string): void {
+  document.documentElement.style.setProperty('--neon', hex);
+  document.documentElement.style.setProperty('--on-neon', inkFor(hex));
+  for (const swatch of document.querySelectorAll<HTMLButtonElement>('.swatch')) {
+    swatch.setAttribute('aria-pressed', swatch.dataset.color?.toLowerCase() === hex.toLowerCase() ? 'true' : 'false');
+  }
+}
+
+function syncFontSamples(): void {
+  const sample = textInput.value.trim() || 'Ciao';
+  for (const el of document.querySelectorAll<HTMLElement>('.font-sample')) el.textContent = sample;
+  for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
+    card.setAttribute('aria-pressed', card.dataset.font === fontInput.value ? 'true' : 'false');
+  }
+}
+
+function syncSizeChips(): void {
+  const mm = Number(heightInput.value);
+  for (const chip of document.querySelectorAll<HTMLButtonElement>('.size-chip')) {
+    chip.setAttribute('aria-pressed', Number(chip.dataset.size) === mm ? 'true' : 'false');
+  }
+}
+
+function renderSummary(): void {
+  const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
+  const rows: [string, string][] = [];
+  if (imageMode()) rows.push(['Immagine', fileLabel() || 'immagine']);
+  else {
+    const font = FONTS.find((entry) => entry.id === fontInput.value);
+    rows.push(['Testo', textInput.value], ['Font', font?.name ?? fontInput.value]);
+  }
+  const mm = Number(heightInput.value);
+  rows.push(
+    ['Misura', Number.isFinite(mm) ? cmLabel(mm) : ''],
+    ['Colore', color.value],
+    ['Effetto', effect?.value === 'arcobaleno' ? 'Arcobaleno' : 'Colore fisso'],
+    ['Diffusore', diffuserOn() ? 'Sì' : 'No'],
+    ['Cornice', `${wallMm().toFixed(1)} mm`],
+  );
+  summary.replaceChildren();
+  for (const [term, detail] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = term;
+    const dd = document.createElement('dd');
+    dd.textContent = detail;
+    summary.append(dt, dd);
+  }
+}
+
+function openSheet(pane: string): void {
+  if (pane === 'text') selectKind('text');
+  shell.dataset.sheet = pane;
+  sheetTitle.textContent = TITLES[pane] ?? pane;
+  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = el.dataset.pane !== pane;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+    button.setAttribute('aria-pressed', button.dataset.tool === pane ? 'true' : 'false');
+  }
+  openRequest.setAttribute('aria-pressed', pane === 'request' ? 'true' : 'false');
+  if (pane !== 'request') lastTool = pane;
+  if (pane === 'request') renderSummary();
+}
+
+function closeSheet(): void {
+  if (isDesktop()) {
+    openSheet(lastTool || 'text');
+    return;
+  }
+  shell.dataset.sheet = '';
+  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = true;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+    button.setAttribute('aria-pressed', 'false');
+  }
+  openRequest.setAttribute('aria-pressed', 'false');
+}
+
+function toggleSheet(pane: string): void {
+  if (!isDesktop() && shell.dataset.sheet === pane) {
+    closeSheet();
+    return;
+  }
+  openSheet(pane);
+}
+
+function selectKind(kind: 'text' | 'image'): void {
+  const input = document.querySelector<HTMLInputElement>(`input[name="sourceKind"][value="${kind}"]`);
+  if (!input || input.checked) return;
+  input.checked = true;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 const scene = mountSignScene(stage);
 const generator = createGenerator();
+applyNeon(color.value);
 scene.setColor(color.value);
 scene.setMode('accesa');
 scene.setEffect('fisso');
 
 let previewDiffuser = true;
+
+function applyPreviewMode(): void {
+  const on = diffuserOn();
+  const mode: PreviewMode = on ? (litOn() ? 'accesa' : 'spenta') : 'senza diffusore';
+  scene.setMode(mode);
+  if (on === previewDiffuser) return;
+  previewDiffuser = on;
+  void showSign();
+}
+
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
   input.addEventListener('change', () => {
-    if (!input.checked) return;
-    scene.setMode(input.value as PreviewMode);
-    const next = input.value !== 'senza diffusore';
-    if (next === previewDiffuser) return;
-    previewDiffuser = next;
-    void showSign();
+    if (input.checked) applyPreviewMode();
   });
 }
-color.addEventListener('input', () => scene.setColor(color.value));
+for (const input of document.querySelectorAll<HTMLInputElement>('input[name="diffuser"]')) {
+  input.addEventListener('change', () => {
+    if (input.checked) applyPreviewMode();
+  });
+}
+color.addEventListener('input', () => {
+  applyNeon(color.value);
+  scene.setColor(color.value);
+});
+for (const swatch of document.querySelectorAll<HTMLButtonElement>('.swatch')) {
+  swatch.addEventListener('click', () => {
+    const hex = swatch.dataset.color;
+    if (!hex) return;
+    color.value = hex;
+    color.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="effect"]')) {
   input.addEventListener('change', () => {
     if (input.checked) scene.setEffect(input.value === 'arcobaleno' ? 'arcobaleno' : 'fisso');
@@ -202,7 +426,10 @@ function blocksSubmit(warnings: readonly string[]): boolean {
 }
 
 function updateSubmit(): void {
-  submitButton.disabled = liveBlocked || workerBlocked;
+  const blocked = liveBlocked || workerBlocked;
+  submitButton.disabled = blocked;
+  blockedReason.hidden = !blocked;
+  blockedReason.textContent = blocked ? (liveBlocked ? copy.warnings.editor : blockReason || 'Correggi prima di inviare.') : '';
 }
 
 function rememberSource(): void {
@@ -224,6 +451,7 @@ function revertSource(): void {
   const kind = document.querySelector<HTMLInputElement>(`input[name="sourceKind"][value="${sourceMemory.kind}"]`);
   if (kind) kind.checked = true;
   syncSourceFields();
+  syncFontSamples();
 }
 
 function dropEdits(): void {
@@ -400,8 +628,16 @@ async function showSign(): Promise<void> {
     });
     scene.setColor(color.value);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
+    const blocking = result.warnings.find(
+      (warning) =>
+        warning.includes('curva troppo stretta') ||
+        warning.includes('sotto il passo di taglio') ||
+        warning.startsWith('Sagome che si fondono'),
+    );
+    blockReason = blocking ?? '';
     workerBlocked = blocksSubmit(result.warnings);
     updateSubmit();
+    if (shell.dataset.sheet === 'request') renderSummary();
     const leds = result.lightPoints.length > 0 ? `${result.lightPoints.length} LED` : 'Nessun LED sulla striscia.';
     const shown = result.warnings.filter((warning) => {
       if (/bassa risoluzione|tratto non uniforme|^Puntino|^Trattino fuori/.test(warning)) return true;
@@ -421,11 +657,13 @@ const schedule = (): void => {
   timer = window.setTimeout(() => void showSign(), 350);
 };
 textInput.addEventListener('input', () => {
+  syncFontSamples();
   if (!keepOrDrop(textInput.value !== sourceMemory.text)) return;
   invalidateStl();
   schedule();
 });
 fontInput.addEventListener('change', () => {
+  syncFontSamples();
   if (!keepOrDrop(fontInput.value !== sourceMemory.font)) return;
   void showSign();
 });
@@ -464,12 +702,17 @@ imageInput.addEventListener('change', () => {
     imageInput.value = '';
     return;
   }
+  const imageRadio = document.querySelector<HTMLInputElement>('input[name="sourceKind"][value="image"]');
+  if (imageRadio) imageRadio.checked = true;
   void loadImage(file);
 });
 heightInput.addEventListener('change', () => {
   const next = Number(heightInput.value);
-  if (edited && next > 0 && heightAtEdit > 0 && Math.abs(next - heightAtEdit) > 1e-9) {
-    const factor = next / heightAtEdit;
+  const clamped = Math.min(HEIGHT_MAX_MM, Math.max(HEIGHT_MIN_MM, Number.isFinite(next) ? next : 120));
+  if (clamped !== next) heightInput.value = String(clamped);
+  syncSizeChips();
+  if (edited && clamped > 0 && heightAtEdit > 0 && Math.abs(clamped - heightAtEdit) > 1e-9) {
+    const factor = clamped / heightAtEdit;
     edited = {
       paths: scalePaths(edited.paths, factor),
       crossings: edited.crossings.map((crossing) => ({
@@ -477,18 +720,44 @@ heightInput.addEventListener('change', () => {
         under: crossing.under,
       })),
     };
-    heightAtEdit = next;
+    heightAtEdit = clamped;
     editor?.load(edited.paths, edited.crossings);
-  } else if (next > 0) {
-    heightAtEdit = next;
+  } else if (clamped > 0) {
+    heightAtEdit = clamped;
   }
   void showSign();
 });
+for (const chip of document.querySelectorAll<HTMLButtonElement>('.size-chip')) {
+  chip.addEventListener('click', () => {
+    const mm = chip.dataset.size;
+    if (!mm) return;
+    heightInput.value = mm;
+    heightInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-height-step]')) {
+  button.addEventListener('click', () => {
+    const delta = Number(button.dataset.heightStep);
+    const current = Number(heightInput.value);
+    const base = Number.isFinite(current) ? current : 120;
+    const next = Math.min(HEIGHT_MAX_MM, Math.max(HEIGHT_MIN_MM, Math.round(base + delta)));
+    heightInput.value = String(next);
+    heightInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 wallInput.addEventListener('input', schedule);
 wallInput.addEventListener('change', () => {
   wallInput.value = wallMm().toFixed(1);
   void showSign();
 });
+for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
+  card.addEventListener('click', () => {
+    const id = card.dataset.font;
+    if (!id || fontInput.value === id) return;
+    fontInput.value = id;
+    fontInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 
 function isSvgFile(file: File): boolean {
   const name = file.name.toLowerCase();
@@ -554,6 +823,30 @@ submitButton.addEventListener('click', () => {
   if (submitButton.disabled) return;
   status.dataset.sent = 'true';
 });
+backToText.addEventListener('click', () => {
+  selectKind('text');
+  openSheet('text');
+});
+sheetClose.addEventListener('click', () => closeSheet());
+openRequest.addEventListener('click', () => toggleSheet('request'));
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+  button.addEventListener('click', () => {
+    const tool = button.dataset.tool;
+    if (tool) toggleSheet(tool);
+  });
+}
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const target = event.target;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
+  if (shell.dataset.sheet === 'more' && editorCanvas.dataset.open === 'true') return;
+  if (!shell.dataset.sheet) return;
+  if (isDesktop() && shell.dataset.sheet !== 'request') return;
+  closeSheet();
+});
+desktop.addEventListener('change', () => {
+  if (isDesktop() && !shell.dataset.sheet) openSheet('text');
+});
 
 async function openEditor(): Promise<void> {
   if (sourceSegments.length === 0 && !edited) return;
@@ -602,4 +895,19 @@ async function openEditor(): Promise<void> {
   }
 }
 
+void (async () => {
+  await Promise.all(
+    FONTS.filter((font) => font.kind === 'outline').map(async (font) => {
+      try {
+        const face = new FontFace(font.id, `url(${import.meta.env.BASE_URL}${font.file})`);
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        // Senza il file resta il font di sistema. Le miniature dei tratti singoli sono v1.1.
+      }
+    }),
+  );
+})();
+
+if (isDesktop()) openSheet('text');
 void showSign();
