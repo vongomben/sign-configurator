@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Debug — rasterizzazione, scheletro, grafo, segmenti</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 0 1rem 1rem; color: #222; background: #fff; }
+      nav { padding: 0.5rem 0; }
+      form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-bottom: 0.75rem; }
+      form label { display: flex; flex-direction: column; font-size: 0.85rem; gap: 0.2rem; }
+      input[name='text'] { width: 20rem; }
+      input[type='number'] { width: 6rem; }
+      button { padding: 0.4rem 0.8rem; }
+      #measures { display: grid; grid-template-columns: max-content max-content; gap: 0.15rem 1rem; font-size: 0.9rem; margin: 0 0 0.5rem; }
+      #measures dt { color: #555; }
+      #measures dd { margin: 0; font-variant-numeric: tabular-nums; }
+      #warnings { margin: 0 0 0.75rem; padding: 0; list-style: none; font-size: 0.9rem; }
+      #warnings li { background: #fff4d6; border-left: 3px solid #d9a400; padding: 0.25rem 0.5rem; margin-bottom: 0.25rem; }
+      #warnings li.error, #height-hint.error { background: #fde8e8; border-color: #c02020; color: #8a1010; }
+      #issues { margin: 0 0 0.75rem; font-size: 0.9rem; }
+      #issues details { margin: 0 0 0.35rem; border: 1px solid #e4e4e4; background: #fff; }
+      #issues summary { cursor: pointer; padding: 0.3rem 0.5rem; }
+      #issues button { display: block; width: 100%; text-align: left; font: inherit; cursor: pointer; background: #fff4d6; border: 0; border-left: 3px solid #d9a400; border-bottom: 1px solid #f3e6c0; padding: 0.25rem 0.5rem; }
+      #issues button.error { background: #fde8e8; border-left-color: #c02020; color: #8a1010; }
+      #height-hint { margin: 0 0 0.75rem; padding: 0.35rem 0.5rem; background: #eef6ee; border-left: 3px solid #2e7d32; }
+      #bom { border-collapse: collapse; font-size: 0.85rem; margin: 0.75rem 0 1rem; }
+      #bom th, #bom td { border: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: left; font-variant-numeric: tabular-nums; }
+      #bom th { background: #f4f4f4; }
+      #bom caption { text-align: left; font-weight: 600; margin-bottom: 0.3rem; }
+      #bom-summary { font-weight: 600; margin: 0.75rem 0 0.35rem; }
+      #coverage { border-collapse: collapse; font-size: 0.85rem; margin: 0.4rem 0 0.75rem; }
+      #coverage th, #coverage td { border: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: left; font-variant-numeric: tabular-nums; }
+      #coverage th { background: #f4f4f4; }
+      #coverage caption { text-align: left; font-weight: 600; margin-bottom: 0.3rem; }
+      #raster-wrap { overflow: auto; max-height: 70vh; border: 1px solid #ccc; background: #fff; }
+      #solid-view { height: 360px; margin: 0.5rem 0; background: #1d1f24; border-radius: 4px; position: relative; }
+      #solid-status { font-size: 0.85rem; color: #555; }
+      #raster { display: block; image-rendering: pixelated; }
+      #threshold-preview { image-rendering: pixelated; background: #111; max-width: 14rem; height: auto; }
+      #manifold-check { font-size: 0.85rem; color: #555; }
+      form label.check { flex-direction: row; align-items: center; gap: 0.3rem; }
+      #legend { font-size: 0.85rem; color: #444; margin: 0 0 0.5rem; }
+      #legend span::before { content: ''; display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--c); margin: 0 0.25rem 0 0.6rem; vertical-align: -0.05em; }
+    </style>
+  </head>
+  <body>
+    <nav><a href="./index.html">Cliente</a> · <a href="./admin.html">Admin</a> · <a href="./debug.html">Debug</a> · <a href="./bend-test.html">Bend test</a> · <a href="./spec.html">Spec</a></nav>
+    <main id="app">
+      <h1>Debug: raster [A], scheletro [B], grafo [C], spezzoni [D]–[G]</h1>
+      <form id="raster-form">
+        <label>Sorgente
+          <select name="sourceKind">
+            <option value="text" selected>Testo</option>
+            <option value="image">Immagine</option>
+          </select>
+        </label>
+        <label data-source="text">Testo (una riga) <input name="text" type="text" value="Ciao Torino" /></label>
+        <label data-source="text">Font <select name="fontId"></select></label>
+        <label data-source="image" hidden>File <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg" /></label>
+        <label data-source="trace" hidden>Traccia
+          <select name="trace">
+            <option value="centerline" selected>Linea centrale</option>
+            <option value="outline">Contorno</option>
+          </select>
+        </label>
+        <label data-source="raster" hidden>Soglia <input name="threshold" type="range" min="0" max="255" step="1" value="128" /> <span id="threshold-value">128</span></label>
+        <label data-source="raster" class="check" hidden><input name="invert" type="checkbox" /> Inverti</label>
+        <canvas id="threshold-preview" data-source="raster" hidden></canvas>
+        <label><span id="height-label">Altezza maiuscole (mm)</span> <input name="heightMm" type="number" step="1" min="5" value="100" /></label>
+        <label data-source="px">Risoluzione (px/mm) <input name="pxPerMm" type="number" step="1" min="1" max="40" value="10" /></label>
+        <label>Zoom vista <input name="zoom" type="number" step="0.05" min="0.05" max="8" value="0.25" /></label>
+        <label class="check"><input name="showGraph" type="checkbox" checked /> Scheletro e grafo</label>
+        <label>Spigoli
+          <select name="cuspMode">
+            <option value="warn">avvisa</option>
+            <option value="split" selected>dividi lo spezzone</option>
+          </select>
+        </label>
+        <label>Puntini
+          <select name="iDotMode">
+            <option value="dot" selected>puntino con fori</option>
+            <option value="dash">trattino</option>
+            <option value="omit">ometti</option>
+            <option value="unlit">rilievo senza striscia</option>
+          </select>
+        </label>
+        <button type="submit">Rasterizza</button>
+      </form>
+      <p id="legend">
+        Nodi per grado:
+        <span style="--c: #2e7d32">1 estremo</span>
+        <span style="--c: #757575">2 anello chiuso</span>
+        <span style="--c: #ef6c00">3 giunzione</span>
+        <span style="--c: #d32f2f">4 incrocio</span>
+        <span style="--c: #7b1fa2">≥ 5</span>
+        · archi in blu/verde acqua alternati
+      </p>
+      <dl id="measures"></dl>
+      <ul id="warnings"></ul>
+      <p id="height-hint"></p>
+      <table id="coverage">
+        <caption>Copertura per lettera</caption>
+        <thead>
+          <tr>
+            <th>Lettera</th>
+            <th>Riferimento mm</th>
+            <th>Illuminata mm</th>
+            <th>%</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="issues"></div>
+      <div id="raster-wrap"><canvas id="raster"></canvas></div>
+      <p id="bom-summary"></p>
+      <table id="bom">
+        <caption>BOM</caption>
+        <thead>
+          <tr>
+            <th>Spezzone</th>
+            <th>Lunghezza mm</th>
+            <th>Taglio mm</th>
+            <th>LED</th>
+            <th>DIN</th>
+            <th>DOUT</th>
+            <th>Verso DIN</th>
+            <th>Verso DOUT</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+      </table>
+      <h2>Solido [H]–[I]</h2>
+      <div id="solid-view"></div>
+      <p>
+        <button type="button" id="download-housing" disabled>Scarica housing.stl</button>
+        <button type="button" id="download-diffuser" disabled>Scarica diffuser.stl</button>
+      </p>
+      <p id="solid-status">In attesa della generazione 3D…</p>
+      <p><button type="button" id="manifold-test">Test manifold</button></p>
+      <pre id="manifold-check">manifold-3d: verifica in corso…</pre>
+    </main>
+    <script type="module" src="/src/ui/debug.ts"></script>
+  </body>
+</html>
