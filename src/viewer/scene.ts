@@ -69,6 +69,10 @@ export interface SignScene {
 const FRONT_LIMIT = (40 * Math.PI) / 180;
 const WALL = 0xe6e0d6;
 
+function cssHex(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
 function coarsePointer(): boolean {
   return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 720px)').matches;
 }
@@ -89,14 +93,15 @@ function geometryOf(mesh: StlMesh): BufferGeometry {
   return geometry;
 }
 
-export function mountSignScene(host: HTMLElement): SignScene {
+export function mountSignScene(host: HTMLElement, options?: { background?: number }): SignScene {
   const mobile = coarsePointer();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const backdrop = options?.background ?? WALL;
 
   host.replaceChildren();
   host.style.position = 'relative';
   host.style.minHeight = '70vh';
-  host.style.background = '#e6e0d6';
+  host.style.background = cssHex(backdrop);
   host.style.overflow = 'hidden';
 
   const renderer = new WebGLRenderer({ antialias: !mobile, alpha: false, powerPreference: 'high-performance' });
@@ -111,7 +116,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
   host.appendChild(renderer.domElement);
 
   const scene = new Scene();
-  scene.background = new Color(WALL);
+  scene.background = new Color(backdrop);
 
   const daylight = new HemisphereLight(0xfff6ea, 0xc9c2b6, 0.85);
   const sun = new DirectionalLight(0xfffaf3, 1.15);
@@ -161,7 +166,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
   splat.frustumCulled = false;
   glowScene.add(splat);
   const glowMaterial = createDiffuserGlowMaterial(glowTarget.texture);
-  const wallMaterial = createWallGlowMaterial(glowTarget.texture, new Color(WALL));
+  const wallMaterial = createWallGlowMaterial(glowTarget.texture, new Color(backdrop));
   wall.material = wallMaterial;
   const emitterMaterial = createEmitterMaterial();
   const emitters = new Points(ledGeometry, emitterMaterial);

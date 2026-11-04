@@ -356,7 +356,7 @@ function selectKind(kind: 'text' | 'image'): void {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-const scene = mountSignScene(stage);
+const scene = mountSignScene(stage, { background: 0x000000 });
 const generator = createGenerator();
 applyNeon(color.value);
 scene.setColor(color.value);

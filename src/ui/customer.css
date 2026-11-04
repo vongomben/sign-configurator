@@ -8,7 +8,7 @@
   --dock: #161311;
   color: var(--ink);
   font-family: system-ui, sans-serif;
-  background: #12100e;
+  background: #000;
 }
 
 * { box-sizing: border-box; }
@@ -50,7 +50,7 @@ select {
   height: 100%;
   max-height: 100%;
   overflow: hidden;
-  background: #12100e;
+  background: #000;
 }
 
 .stage-wrap {
