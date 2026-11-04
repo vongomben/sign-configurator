@@ -1,0 +1,19 @@
+Hershey Script 1-stroke (Script Simplex)
+
+Originally prepared in 2011 and converted to SVG fonts in 2019 by
+Windell H. Oskay, Evil Mad Scientist Laboratories.
+https://gitlab.com/oskay/svg-fonts
+
+Contents adapted from the Hershey fonts. This distribution may be used
+for any purpose, commercial or otherwise, providing that:
+
+1. The following acknowledgements are distributed with the font data:
+   - The Hershey Fonts were originally created by Dr. A. V. Hershey
+     while working at the U.S. National Bureau of Standards.
+   - The format of the font data in the distribution this SVG was
+     adapted from was originally created by James Hurt, Cognition, Inc.,
+     900 Technology Park Drive, Billerica, MA 01821.
+
+2. The font data may be converted into any other format except the
+   format distributed by the U.S. NTIS, where each point is described
+   in eight bytes as "xxx yyy:".
