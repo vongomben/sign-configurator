@@ -638,9 +638,14 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
 - Deploy:
   - **Il build pubblico contiene solo `index.html`** (pagina cliente): `npm run build:public`
     (`vite build --mode public`).
-  - A ogni push su `main`, `.github/workflows/deploy.yml` esegue `npm run build:public` e pubblica
-    `dist` su GitHub Pages (`actions/upload-pages-artifact` e `actions/deploy-pages`). Il `base` in
-    `vite.config.ts` resta `/sign-configurator/`.
+  - Il sito pubblico è https://vongomben.github.io/sign-configurator/ . È il build di
+    `npm run build:public` (solo la pagina cliente). Il `base` in `vite.config.ts` resta
+    `/sign-configurator/`.
+  - `.github/workflows/deploy.yml`, a ogni push su `main`, esegue quel build e lo pubblica con
+    `actions/upload-pages-artifact` e `actions/deploy-pages`. Perché parta, in Settings → Pages la
+    sorgente deve essere **GitHub Actions**. Finché la sorgente è il branch `main`, quel branch
+    ospita direttamente il contenuto di `dist` (la pagina già compilata) e `index.dev.html` conserva
+    il sorgente della pagina.
   - `admin.html`, `debug.html`, `bend-test.html` e `spec.html` si usano **solo in locale** con
     `npm run dev`; `npm run build` le compila tutte, per verifica.
 
