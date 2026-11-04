@@ -735,7 +735,7 @@ copre. All'apertura nessun foglio è aperto.
 │                              │
 │        «Ciao» accesa         │
 │                              │
-│ 114 LED                      │
+│ 114 LED              5 V · 9 A │
 ├──────────────────────────────┤
 │  foglio, max 48dvh     Fatto │  ← chiuso all'avvio
 ├──────────────────────────────┤
@@ -745,7 +745,9 @@ copre. All'apertura nessun foglio è aperto.
 
 - **Anteprima** (`#stage`) a tutto schermo. Sovrapposti in alto: a sinistra la pillola Accesa/Spenta
   (`radio name="mode"`), a destra «Richiedi» (`#open-request`) nel colore scelto, con un leggero
-  alone. In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`).
+  alone. In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
+  destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
+  ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
 - **Dock** (`nav.dock`), sempre visibile: sei strumenti grandi (≥ 48 px, icona + etichetta), ciascuno
   con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
   «Immagine», `more` «Altro».

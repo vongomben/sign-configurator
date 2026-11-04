@@ -24,6 +24,19 @@ for (const viewport of [
     await page.goto('index.html', { waitUntil: 'load' });
     await expect(page.locator('input[name="text"]')).toHaveValue('Ciao');
     await expect(page.locator('#preview-status')).toContainText('LED');
+    const supply = page.locator('#preview-supply');
+    await expect(supply).toBeVisible();
+    await expect(supply).toContainText('5 V');
+    await expect(supply).toContainText(/\d+ A/);
+    const corners = await page.evaluate(() => {
+      const led = document.querySelector('#preview-status')!.getBoundingClientRect();
+      const psu = document.querySelector('#preview-supply')!.getBoundingClientRect();
+      const stage = document.querySelector('.stage-wrap')!.getBoundingClientRect();
+      return { ledLeft: led.left, psuRight: psu.right, stageLeft: stage.left, stageRight: stage.right };
+    });
+    expect(corners.ledLeft).toBeLessThan(corners.psuRight);
+    expect(corners.psuRight).toBeGreaterThan(corners.stageRight - 24);
+    expect(corners.ledLeft).toBeLessThan(corners.stageLeft + 24);
     await expectNoScroll(page);
 
     if (viewport.mobile) {

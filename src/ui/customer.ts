@@ -84,7 +84,10 @@ app.innerHTML = `
         </div>
         <button type="button" id="open-request" aria-pressed="false">Richiedi</button>
       </div>
-      <p id="preview-status" data-generation="0">Generazione…</p>
+      <div class="stage-meta">
+        <p id="preview-status" data-generation="0">Generazione…</p>
+        <p id="preview-supply" hidden></p>
+      </div>
     </div>
     <section class="sheet" aria-label="Strumento">
       <header class="sheet-bar">
@@ -170,6 +173,7 @@ const sheetClose = document.querySelector<HTMLButtonElement>('#sheet-close')!;
 const openRequest = document.querySelector<HTMLButtonElement>('#open-request')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
+const supply = document.querySelector<HTMLElement>('#preview-supply')!;
 const editButton = document.querySelector<HTMLButtonElement>('#edit-paths')!;
 const restoreButton = document.querySelector<HTMLButtonElement>('#restore-paths')!;
 const submitButton = document.querySelector<HTMLButtonElement>('#submit-order')!;
@@ -509,6 +513,18 @@ function saveStl(name: string, buffer: ArrayBuffer): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Pillola in basso a destra: alimentatore a 5 V, se la distinta lo conosce. */
+function showSupply(bom: { assembly?: { supplyA?: number } } | null): void {
+  const amps = bom?.assembly?.supplyA ?? 0;
+  if (!(amps > 0)) {
+    supply.hidden = true;
+    supply.textContent = '';
+    return;
+  }
+  supply.hidden = false;
+  supply.textContent = `5 V · ${amps} A`;
+}
+
 function fileLabel(): string {
   if (!imageMode()) return textInput.value.trim();
   const name = raster?.name ?? svgName;
@@ -527,6 +543,7 @@ async function showSign(): Promise<void> {
   const id = ++request;
   const epoch = editEpoch;
   clearStl();
+  showSupply(null);
   syncSourceFields();
   const heightMm = Number(heightInput.value);
   if (!(heightMm > 0)) {
@@ -627,6 +644,7 @@ async function showSign(): Promise<void> {
       ledGapMm: result.ledGapMm,
     });
     scene.setColor(color.value);
+    showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
     const blocking = result.warnings.find(
       (warning) =>
@@ -780,6 +798,7 @@ async function loadImage(file: File): Promise<void> {
   raster = null;
   if (file.size > IMAGE_MAX_BYTES) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = 'Il file supera 10 MB.';
     return;
   }
@@ -791,6 +810,7 @@ async function loadImage(file: File): Promise<void> {
   }
   if (!isRasterFile(file)) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = 'Carica un file SVG, PNG o JPG.';
     return;
   }
@@ -809,6 +829,7 @@ async function loadImage(file: File): Promise<void> {
     void showSign();
   } catch (err) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = err instanceof Error ? err.message : String(err);
   }
 }
