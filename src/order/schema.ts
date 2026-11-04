@@ -1,4 +1,5 @@
-// Ordine v3 (SPEC §6). v1 si legge come v2, poi v2 come v3: stessi STL e stessa BOM.
+// Ordine v4 (SPEC §6). v1 → v2 → v3 → v4. Sugli ordini vecchi `plate` è null:
+// stessi STL e la BOM di prima più "plate": null.
 import type { Params } from '../config';
 
 export interface OrderV1 {
@@ -92,6 +93,17 @@ export interface SignOrder {
 
 export type SizePreset = 'S' | 'M' | 'L' | 'XL';
 
+export type PlateShape = 'rect' | 'pill' | 'contour';
+export type PlateMaterial = 'clear' | 'black' | 'wood';
+
+/** Fondale scelto dal cliente. Spessore e kerf stanno in config, non qui (SPEC §6, §13). */
+export interface PlateChoice {
+  shape: PlateShape;
+  material: PlateMaterial;
+  marginMm: number;
+  cornerRMm: number;
+}
+
 export type LightEffect = 'colore fisso' | 'arcobaleno';
 
 /** Scelte che non cambiano la geometria (SPEC §6). */
@@ -125,6 +137,24 @@ export interface SignOrderV3 {
   crossings: OrderCrossing[];
   customer: CustomerChoices;
 }
+
+/** Ordine v4. `plate` è null senza fondale. */
+export interface SignOrderV4 {
+  schemaVersion: 4;
+  generatorVersion: string;
+  pricingVersion: string | null;
+  source: OrderSource;
+  heightMm: number;
+  sizePreset: SizePreset | null;
+  color: string;
+  params: Partial<Params>;
+  paths: OrderPath[] | null;
+  crossings: OrderCrossing[];
+  customer: CustomerChoices;
+  plate: PlateChoice | null;
+}
+
+export type AnyOrder = OrderV1 | SignOrder | SignOrderV3 | SignOrderV4;
 
 function copySource(source: OrderSource): OrderSource {
   if (source.kind === 'text') return { kind: 'text', text: source.text, fontId: source.fontId };
@@ -177,7 +207,17 @@ function copyCrossing(crossing: OrderCrossing): OrderCrossing {
   return { at: [crossing.at[0], crossing.at[1]], under: crossing.under };
 }
 
-function asV2(order: OrderV1 | SignOrder | SignOrderV3): SignOrder {
+function copyPlate(plate: PlateChoice | null): PlateChoice | null {
+  if (plate === null) return null;
+  return {
+    shape: plate.shape,
+    material: plate.material,
+    marginMm: plate.marginMm,
+    cornerRMm: plate.cornerRMm,
+  };
+}
+
+function asV2(order: AnyOrder): SignOrder {
   if (order.schemaVersion === 1) {
     return {
       schemaVersion: 2,
@@ -202,21 +242,23 @@ function asV2(order: OrderV1 | SignOrder | SignOrderV3): SignOrder {
   };
 }
 
-/** v1 → v2 → v3. I campi del cliente mancanti prendono i default; la geometria non cambia. */
-export function migrateOrder(order: OrderV1 | SignOrder | SignOrderV3): SignOrderV3 {
+/** v1 → v2 → v3 → v4. I campi mancanti prendono i default; la geometria non cambia. */
+export function migrateOrder(order: AnyOrder): SignOrderV4 {
   const geometry = asV2(order);
-  const customer = order.schemaVersion === 3 ? { ...order.customer } : { ...DEFAULT_CUSTOMER };
+  const carried = order.schemaVersion === 3 || order.schemaVersion === 4;
+  const customer = carried ? { ...order.customer } : { ...DEFAULT_CUSTOMER };
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatorVersion: geometry.generatorVersion,
-    pricingVersion: order.schemaVersion === 3 ? order.pricingVersion : null,
+    pricingVersion: carried ? order.pricingVersion : null,
     source: geometry.source,
     heightMm: geometry.heightMm,
-    sizePreset: order.schemaVersion === 3 ? order.sizePreset : null,
+    sizePreset: carried ? order.sizePreset : null,
     color: geometry.color,
     params: geometry.params,
     paths: geometry.paths,
     crossings: geometry.crossings,
     customer,
+    plate: order.schemaVersion === 4 ? copyPlate(order.plate) : null,
   };
 }

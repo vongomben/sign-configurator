@@ -7,12 +7,13 @@ Se il codice e questo documento divergono, si aggiorna prima il documento.
 
 Web app 100% client-side (sito statico, nessun backend per la geometria):
 
-- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm) e colore; se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine e può scaricare gli STL dell'insegna. Cambiare lo spessore rigenera l'anteprima.
+- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm), colore ed eventuale fondale (§13); se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine e può scaricare gli STL dell'insegna. Cambiare lo spessore rigenera l'anteprima.
 - **Admin (Davide)**: dallo stesso JSON d'ordine rigenera in modo deterministico i file di produzione:
   1. `housing.stl` — cornice/canale da stampare in nero
   2. `diffuser.stl` — coperchio diffusore opzionale (bianco/naturale)
   3. `back.dxf` (+ `back.svg`) — fori sul retro per la CNC, visti dal retro
   4. `bom.json` — distinta: spezzoni di striscia, LED, fori, lunghezze
+  5. `plate.svg` (+ `plate.dxf`) — fondale da tagliare al laser, se scelto (§13)
 
 Unità: **millimetri** ovunque. Piano XY = piano dell'insegna, Z verso chi guarda. Il retro sta a Z = 0.
 
@@ -84,6 +85,8 @@ ricalcola `MIN_LETTER_H` da cerniera e passo.
 | `EDIT_MIN_NODE_DIST` | 0.5 | distanza minima fra due nodi consecutivi nell'editor |
 
 Altezza totale = `FLOOR + CHANNEL_DEPTH`.
+
+I parametri del fondale (`PLATE_*`) sono in §13.
 
 ### Profilo dei bordi (`src/geometry/edgeProfile.ts`)
 
@@ -246,19 +249,22 @@ testo + font + altezza, oppure immagine (§4bis)
         profilo esterno (CHANNEL_W/2 + WALL), giunzioni e terminazioni arrotondate, larghezza esterna costante;
         la freccia della catena allarga solo il lato interno, senza scendere sotto WALL_MIN;
         ai CROSSING_GAP il canale resta continuo, solo la striscia si interrompe;
-        l'asola è gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata
+        l'asola è gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata;
+        con un fondale (§13): contorno della lastra e suoi fori, dallo stesso outline
  → [I] 3D (manifold-3d): estrusione profilo esterno (con smusso EDGE_PROFILE in cima) − canale
-        − fori (ancoraggio, cavo) − asole fili e tasche d'angolo, con smusso SLOT_LIP_CHAMFER (+ boss)
- → [J] export: STL binario, DXF/SVG, BOM JSON
+        − fori (ancoraggio, cavo) − asole fili e tasche d'angolo, con smusso SLOT_LIP_CHAMFER (+ boss);
+        con un fondale: estrusione della lastra di PLATE_T, fori compresi
+ → [J] export: STL binario, DXF/SVG, BOM JSON, plate.svg/plate.dxf
 ```
 
 Tutto ciò che va da [A] a [J] gira in un **Web Worker** (Comlink). L'interfaccia non si blocca mai.
 
 `generate(order)` esegue [A]–[I] nel worker e restituisce
-`{ housingMesh, diffuserMesh, holes, slots, pockets, outline, centerlines, lightPoints, ledGapMm, bom, warnings }`.
+`{ housingMesh, diffuserMesh, plateMesh, holes, slots, pockets, outline, plateOutline, plateHoles, centerlines, lightPoints, ledGapMm, bom, warnings }`.
 Le mesh sono i triangoli in mm, nello stesso riferimento dell'STL. `holes` sono gli ancoraggi (ciechi)
 e il cavo; `slots` e `pockets` i contorni reali di asole e tasche; `outline` il profilo esterno;
-`centerlines` le linee centrali degli spezzoni. `lightPoints` sono i LED sulla parte illuminata di
+`centerlines` le linee centrali degli spezzoni. `plateMesh`, `plateOutline` e `plateHoles` sono
+`null` senza fondale (§13). `lightPoints` sono i LED sulla parte illuminata di
 ogni linea centrale (`pos`, `dir` da DIN a DOUT, `segment`, `index`): oggi a `LED_PER_M` (160 al metro
 della striscia COB); un pixel a passo libero userà lo stesso elenco. `ledGapMm` è
 `CHANNEL_DEPTH − STRIP_T`, la distanza fra la faccia del LED e il diffusore.
@@ -271,6 +277,8 @@ L'interfaccia non aspetta il solido: la generazione 3D parte dopo il disegno 2D.
 La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `lightPoints`.
 
 - **Housing**: nero opaco, appena satinato. Il **diffusore** è una mesh a parte.
+- **Fondale** (§13): mesh a parte dietro l'housing, con il materiale scelto, lo spessore e i fori
+  reali; sul trasparente si vedono fori e fili dietro la lastra.
 - **Spenta**: diffusore bianco opaco, luce ambiente diurna, niente bloom.
 - **Accesa**: sul diffusore la luminosità è la somma di gaussiane centrate sui `lightPoints`.
   La sigma è `ledGapMm`, così se il passo è grande rispetto alla profondità i punti restano
@@ -292,7 +300,7 @@ La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `l
   è attivo nell'anteprima, anche `diffuser.stl`, dalle mesh già calcolate per la scena (niente
   seconda generazione). È disabilitato, con la scritta «Generazione…», finché `generate()` non ha
   restituito `housingMesh`; testo, font, altezza o diffusore lo disabilitano di nuovo e non si
-  scarica mai una mesh precedente. BOM, DXF e SVG restano solo in admin.
+  scarica mai una mesh precedente. BOM, DXF, SVG e file del fondale restano solo in admin.
 
 ### [A] Rasterizzazione (`src/geometry/rasterize.ts`)
 
@@ -454,6 +462,8 @@ la vista su quel punto.
 - **Tasca d'angolo**: quando due asole, l'uscita di uno spezzone e l'ingresso del successivo, si sovrappongono o distano meno di `CORNER_MERGE_DIST`, al loro posto c'è una sola tasca passante, intersezione con il canale (mai oltre), con lo smusso del labbro su entrambi i lati da cui entra la striscia.
 - **Cavo**: all'inizio del primo spezzone.
 
+I fori corrispondenti nel fondale sono descritti in §13.
+
 ### Verso degli spezzoni
 
 La striscia è indirizzabile (WS2812B): il segnale entra da **DIN** ed esce da **DOUT**.
@@ -476,6 +486,7 @@ Layer: `ANCHOR_HOLES` (CIRCLE), `WIRE_SLOTS` (LWPOLYLINE chiusa del contorno rea
   "corners": [{ "x": 0, "y": 0, "segments": [1, 2], "wireMm": 0 }],
   "assembly": { "segments": 0, "solderJoints": 0, "wires": 0, "corners": 0,
                 "wireM": 0, "totalLeds": 0, "maxCurrentA": 0, "supplyA": 0 },
+  "plate": null,
   "warnings": [] }
 ```
 
@@ -490,6 +501,7 @@ meno le due assorbite da ogni tasca. Uno spigolo diviso (`CUSP_MODE` `"split"`),
 (`"dash"`) o un puntino (`"dot"`) aggiunge uno spezzone. Il puntino `"dot"` non ha asole: ha due
 fori `DOT_WIRE_HOLE_D`. Un puntino `"unlit"` non entra nella BOM.
 `corners` = giunti d'angolo: posizione del labbro comune, spezzoni collegati, filo 0 mm.
+`plate` = riepilogo del fondale (§13), `null` senza fondale.
 
 `assembly` è il riepilogo di montaggio, in cima alla tabella BOM nella pagina di debug:
 
@@ -618,6 +630,20 @@ freccia su ogni spezzone.
   e la stessa BOM** (test come `orderSchema.test.ts`).
 - L'ordine **non contiene dati personali**: i contatti viaggiano solo nella richiesta (§12.7).
 
+### Fondale (`schemaVersion` 4)
+
+```json
+{ "schemaVersion": 4, "...": "come v3",
+  "plate": { "shape": "rect", "material": "clear", "marginMm": 20, "cornerRMm": 8 } }
+```
+
+- `plate` è `null` senza fondale. Il fondale genera un file di produzione (`plate.svg`), quindi
+  non sta in `customer`.
+- `shape`: `"rect"` | `"pill"` | `"contour"`; `material`: `"clear"` | `"black"` | `"wood"` (§13).
+  Spessore e kerf non sono nell'ordine: dipendono dal materiale e stanno in `src/config.ts`.
+- Migrazione v3 → v4: `plate: null`. Un ordine v1, v2 o v3 migrato produce gli stessi STL e la
+  BOM di prima più `"plate": null`.
+
 Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo, nessuna casualità).
 
 ## 7. Stack
@@ -625,6 +651,7 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
 - Vite + TypeScript (strict), nessun framework UI pesante (vanilla TS o Preact)
 - `opentype.js`, `manifold-3d` (WASM), `three` (+ `UnrealBloomPass`), `comlink`, `d3-delaunay` (fallback)
 - `paper` (Paper.js, build `paper-core`, senza PaperScript) per l'editor (§5bis), caricato con `import()` dinamico
+- Offset e unioni del fondale (§13) con `manifold-3d` `CrossSection`, come [H]: nessuna libreria in più
 - Export DXF scritto a mano (LWPOLYLINE, AC1015, come i layer in §5) o `dxf-writer`
 - Test: `vitest` sui moduli geometrici puri
 - Controllo di fine fase: `npm run check`. In sequenza esegue `tsc --noEmit`, `vitest run`,
@@ -637,12 +664,17 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
   Una tantum, dopo l'installazione delle dipendenze: `npx playwright install chromium`.
 - Deploy:
   - **Il build pubblico contiene solo `index.html`** (pagina cliente): `npm run build:public`
-    (`vite build --mode public`), che è anche il passo prima di `npm run deploy`.
-  - `admin.html`, `debug.html`, `bend-test.html` (e `spec.html`) si usano **solo in locale** con
+    (`vite build --mode public`).
+  - Il sito pubblico è https://vongomben.github.io/sign-configurator/ . È il build di
+    `npm run build:public` (solo la pagina cliente). Il `base` in `vite.config.ts` resta
+    `/sign-configurator/`.
+  - `.github/workflows/deploy.yml`, a ogni push su `main`, esegue quel build e lo pubblica con
+    `actions/upload-pages-artifact` e `actions/deploy-pages`. Perché parta, in Settings → Pages la
+    sorgente deve essere **GitHub Actions**. Finché la sorgente è il branch `main`, quel branch
+    ospita direttamente il contenuto di `dist` (la pagina già compilata) e `index.dev.html` conserva
+    il sorgente della pagina.
+  - `admin.html`, `debug.html`, `bend-test.html` e `spec.html` si usano **solo in locale** con
     `npm run dev`; `npm run build` le compila tutte, per verifica.
-  - **L'hosting si sceglie più avanti**: GitHub Pages, Cloudflare Pages o Netlify. Il `base` in
-    `vite.config.ts` (`/sign-configurator/`) e lo script `deploy` (gh-pages) sono quelli di GitHub Pages
-    e vanno adattati alla scelta.
 
 ## 8. Struttura cartelle
 
@@ -651,17 +683,18 @@ src/
   config.ts
   fonts/registry.ts, loadFont.ts
   geometry/rasterize.ts, distance.ts, tubes.ts, skeleton.ts, graph.ts, tubePairing.ts, segment.ts, smooth.ts,
-           chain.ts, validate.ts, strip.ts, holes.ts, housing.ts, diffuser.ts, edgeProfile.ts, lights.ts
-  export/stl.ts, dxf.ts, svg.ts, bom.ts
+           chain.ts, validate.ts, strip.ts, holes.ts, housing.ts, diffuser.ts, edgeProfile.ts, lights.ts,
+           plate.ts                (§13: contorno, fori, mesh del fondale)
+  export/stl.ts, dxf.ts, svg.ts, bom.ts, plate.ts (§13: plate.svg, plate.dxf)
   worker/generator.worker.ts, api.ts
-  viewer/scene.ts, neonMaterial.ts
+  viewer/scene.ts, neonMaterial.ts, plateMaterials.ts (§13)
   sources/svgImport.ts (main thread), svgPaths.ts, rasterImport.ts (main thread), bitmapCodec.ts, contours.ts
   editor/editor.ts (Paper.js, UI), paths.ts (formato, scala, appiattimento: puro), crossings.ts, liveCheck.ts
-  order/schema.ts (tipi v3, migrazione v1 → v2 → v3)
+  order/schema.ts (tipi v4, migrazione v1 → v2 → v3 → v4)
   pricing.ts                      (§12.5, puro)
   order/share.ts                  (§12.6)
-  ui/copy.it.ts, sizes.ts, steps/ (§12)
-  ui/customer.ts, admin.ts, debug.ts
+  ui/copy.it.ts, sizes.ts
+  ui/customer.ts, customer.css, admin.ts, debug.ts
   tools/bendTest.ts (pagina), bendTestGeometry.ts (pezzi di prova A archi / B angoli, testabile in Node)
 index.html   (cliente, §12)
 admin.html   (admin: incolla o carica JSON, scarica ZIP)
@@ -673,7 +706,7 @@ playwright.config.ts
 
 ## 9. Fuori scope v1
 
-Suddivisione per il piatto di stampa, lastra di fondo CNC, pagamenti, account utente.
+Suddivisione per il piatto di stampa, pagamenti, account utente.
 La pagina cliente invia una richiesta, non un ordine pagato (§12.7).
 
 ## 10. Domande aperte
@@ -683,28 +716,48 @@ di `config.ts`, da aggiornare dopo le misure sul campione stampato.
 
 Immagini caricate dal cliente: serve una dichiarazione che ne ha i diritti (casella prima dell'invio)?
 
+Fondale (§13): i passaggi dei fili usano `PLATE_WIRE_HOLES` (default `true`): fori passanti sotto le
+asole e sul cavo, visibili sul trasparente. `false` lascia la lastra chiusa in quei punti (fili
+nell'intercapedine fra housing e lastra). Resta da confermare sul campione. Fissaggio housing →
+lastra: viti M3 dal retro nei fori ciechi, inserti a caldo o distanziali? Spessori reali dei materiali
+acquistati e kerf misurato sul laser per ciascuno.
+
 Per la pagina cliente (§12), da decidere prima della pubblicazione: costanti di prezzo
-(`src/pricing.ts`), tempi di produzione e consegna, garanzia, costi e zone di spedizione, chi emette
-la fattura, indirizzo email delle richieste, servizio di invio del modulo senza client di posta, testo
-dell'informativa privacy. Il §12 si prova prima in `shop-test.html` (solo locale) e passa in
-`index.html` dopo l'approvazione di Davide.
+(`src/pricing.ts`, comprese quelle del fondale), tempi di produzione e consegna, garanzia, costi e
+zone di spedizione, chi emette la fattura, indirizzo email delle richieste, testo dell'informativa
+privacy. Per l'invio senza client di posta la direzione è l'integrazione WooCommerce (§11). La pagina
+cliente è `index.html`: si prova in locale e si pubblica con `npm run deploy` solo dopo
+l'approvazione di Davide.
 
 ## 11. Roadmap post-v1
 
 - **Trasformazioni per lettera** nell'editor (§5bis): sposta, ruota, scala, spaziatura, con la
   lettera come gruppo di spezzoni.
+- **Integrazione WordPress / WooCommerce** (sostituisce il `mailto:` di §12.7):
+  - [ ] Endpoint REST custom (mini-plugin WP) `neon/v1/richiesta`: crea un ordine WooCommerce
+        «In attesa di pagamento» con la configurazione come metadati di riga + link `#o=` (§12.6)
+  - [ ] Nessuna chiave API WooCommerce nel codice del configuratore (repo pubblico)
+  - [ ] CORS limitato al dominio del configuratore (o configuratore incorporato nel sito via shortcode)
+  - [ ] Anti-spam con Cloudflare Turnstile: widget nel configuratore, token verificato lato PHP
+        con secret key in `wp-config.php`; `turnstile.reset()` dopo ogni invio
+  - [ ] Honeypot + rate limit per IP come difese aggiuntive
+  - [ ] Checkbox / rimando privacy policy (raccolta nome/email, Turnstile come servizio terzo)
 
 ## 12. Pagina cliente: proposta di valore, flusso, prezzo
 
 Riferimento di mercato: i configuratori di insegne LED neon flex già in vendita (es. customneon.com).
-Se ne prende **la struttura** (passi numerati, prezzo immediato, barra di fiducia, preventivo su
-misura sempre raggiungibile, design condivisibile). **Non** se ne riprendono testi, immagini, nomi dei
-font, marchi o slogan.
+Se ne prende **la struttura** (l'insegna subito visibile, strumenti in un dock e un foglio alla volta,
+§12.2, prezzo immediato, barra di fiducia, preventivo su misura sempre raggiungibile, design
+condivisibile). **Non** se ne riprendono testi, immagini, nomi dei font, marchi o slogan.
+
+La pagina cliente è `index.html`. Si prova in locale con `npm run dev` e si pubblica con
+`npm run deploy` solo dopo l'approvazione di Davide.
 
 ### 12.1 Proposta di valore
 
 1. **Quello che vedi è quello che stampiamo.** L'anteprima è la geometria dell'STL (§5) con la luce
-   calcolata sui LED reali (`lightPoints`); i vincoli fisici si vedono prima dell'ordine.
+   calcolata sui LED reali (`lightPoints`); i vincoli fisici si vedono prima dell'ordine. Vale anche
+   per il fondale: materiale, spessore e fori nell'anteprima sono quelli tagliati (§13).
 2. **Il tuo disegno, non solo un font.** Testo, firma o logo (§4bis), ritoccabili nell'editor (§5bis).
 3. **Fatta qui, riparabile.** Stampata e assemblata in Italia; cornice, diffusore e strisce sono
    pezzi separabili e sostituibili.
@@ -714,57 +767,95 @@ Titolo di lavoro: *«Scrivi o disegna. Guarda la tua insegna come verrà stampat
 Tutti i testi in `src/ui/copy.it.ts`. **Barra di fiducia**: 3 voci da `copy.it.ts`; una voce con
 valore `null` (dato non ancora deciso, §10) non si mostra.
 
-### 12.2 Una schermata, un passo alla volta
+### 12.2 Mobile prima di tutto: l'insegna, poi gli strumenti
 
-Il configuratore occupa **una sola schermata** (`100dvh`) e la pagina non scorre.
+Niente procedura a passi. La prima cosa che si vede è l'insegna «Ciao» accesa, a tutto schermo.
+Una sola schermata (`100dvh`): la pagina non scorre mai. Gli stili stanno in `src/ui/customer.css`
+(importato da `customer.ts`), con il font di sistema e senza stili inline. `#stage` e il suo canvas
+sono alti il 100 % con `!important`: `scene.ts` lascia il `70vh` inline perché lo usa anche l'admin.
+Lo sfondo dell'anteprima cliente è nero; l'admin resta sul muro chiaro di §5.
 
-- **Desktop** (≥ 900 px): anteprima a sinistra (circa 65 % della larghezza), pannello del passo a
-  destra. **Mobile**: anteprima in alto (circa 45 % dell'altezza), pannello sotto. Se un passo non ci
-  sta, scorre solo il contenuto del pannello.
-- **In cima**: intestazione sottile con nome, barra di fiducia e pulsante «Info» (12.9); sotto, la
-  **barra dei passi** (numero e nome breve; su mobile solo i numeri). Il passo corrente è evidenziato,
-  quelli già visitati sono cliccabili, quelli successivi no.
-- **Un passo alla volta** nel pannello. In fondo al pannello, fissi: prezzo indicativo, «Indietro» e
-  «Avanti» (al passo 7 «Invia richiesta»). «Avanti» si disattiva solo per un vincolo bloccante del
-  passo corrente (12.4), con il motivo scritto accanto; i passi facoltativi hanno «Salta».
-- Ogni cambio aggiorna subito 2D e prezzo; il 3D quando è pronto (§5). Tornare indietro non perde le
-  scelte fatte.
-- Controlli dell'anteprima (sfondo, quote, accesa/spenta, 12.3) sovrapposti in un angolo
-  dell'anteprima, sempre disponibili: non sono un passo.
-- Nel passo 4 l'anteprima diventa la tela dell'editor (§5bis) e il pannello mostra i suoi strumenti;
-  «Fatto» torna all'anteprima 3D.
+Sotto i 900 px il foglio è una riga della griglia e l'anteprima si restringe sopra di esso: non la
+copre. All'apertura nessun foglio è aperto.
 
-I passi:
+```
+┌──────────────────────────────┐
+│ Accesa|Spenta  Cornice mm  Richiedi │
+│ Con|Senza diffusore               │
+│                              │
+│        «Ciao» accesa         │
+│                              │
+│ 114 LED              5 V · 9 A │
+├──────────────────────────────┤
+│  foglio, max 48dvh     Fatto │  ← chiuso all'avvio
+├──────────────────────────────┤
+│ Testo Font Misura Colore …   │
+└──────────────────────────────┘
+```
 
-1. **Testo o immagine.** Due schede. *Testo*: una riga, contatore, caratteri senza glifo segnalati.
-   *Immagine*: caricamento come §4bis (soglia, inverti, `trace` «Linea centrale» / «Contorno»), con
-   gli avvisi di bassa risoluzione e tratto non uniforme.
-2. **Font** (solo testo). Una scheda per font del registro (§4) con **il testo del cliente** in
-   miniatura 2D dalla pipeline, con debounce di 300 ms.
-3. **Dimensione.** Taglie in `src/ui/sizes.ts`: `S 80`, `M 120`, `L 180`, `XL 250` mm (default da
-   tarare), cioè la sommità della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis).
-   Ogni scheda mostra l'ingombro reale (larghezza × altezza di `outline` di [H]) e il prezzo. Le taglie
-   sotto l'altezza minima (§5) sono disattivate con motivo e altezza minima. «Misura libera»: slider
-   in mm con lo stesso limite.
-4. **Ritocca (facoltativo).** Pulsante «Modifica tracciati» → editor §5bis. Cambiare poi testo, font
-   o immagine scarta le modifiche dopo conferma (§5bis); cambiare la misura le scala.
-5. **Colore ed effetto.** Tavolozza + selettore libero; `"colore fisso"` / `"arcobaleno"`.
-   **v1.1**: un colore per spezzone, scelto toccandolo nell'anteprima.
-6. **Finitura.** Diffusore sì/no con le due anteprime affiancate («luce morbida» / «LED a vista»);
-   bordo «dritto» (`"square"`) o «smussato» (`"outer"`); spessore cornice (`WALL`, 1,6–5 mm, §1).
-   Gli altri parametri di §3 restano solo in admin.
-7. **Riepilogo e richiesta.** Scelte, alimentatore (taglio da `supplyA`, spina EU, non selezionabile),
-   fissaggio a parete, prezzo, toggle **bozza di approvazione** (default sì), poi il modulo (12.7).
+- **Anteprima** (`#stage`) a tutto schermo. Sovrapposti in alto: a sinistra la pillola Accesa/Spenta
+  (`radio name="mode"`). Subito sotto, la pillola Con diffusore / Senza diffusore (`radio
+  name="diffuser"`): se è off la scena va in «senza diffusore», altrimenti resta accesa o spenta.
+  Fra quel blocco e «Richiedi» (`#open-request`, nel colore scelto, con un leggero alone) c'è
+  `input name="wallMm"` (`WALL`, 1,6–5 mm). In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
+  destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
+  ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
+- **Dock** (`nav.dock`), sempre visibile: sei strumenti grandi (≥ 48 px, icona + etichetta), ciascuno
+  con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
+  «Immagine», `more` «Altro».
+- Toccare uno strumento apre un foglio dal basso (`.sheet`, max 48dvh, angoli arrotondati, «Fatto»
+  `#sheet-close`). Toccarlo di nuovo o «Fatto» lo chiude. Un solo foglio alla volta. Esc chiude il
+  foglio, tranne durante il ritocco e tranne quando il focus è su un campo.
+- Il canvas `#path-editor` sta sopra l'anteprima (`position: absolute`, 100 % con `!important`) ed è
+  visibile solo con il foglio Altro aperto. Cambiare foglio non chiama `editor.close()`.
 
-Nel pannello, sotto i pulsanti, un link discreto: **«Non riesci a ottenere quello che vuoi?»** →
-preventivo (12.8).
+**Desktop** (≥ 900 px): anteprima a sinistra, dock sotto; il foglio è una colonna fissa di 400 px a
+destra, sempre aperta (all'avvio su Testo, mai vuota), con il titolo dello strumento. Esc, sul
+desktop, lascia solo il foglio Richiedi e torna all'ultimo strumento.
+
+Ogni foglio è un `.pane[data-pane=…]`:
+
+- **text.** `input name="text"`, valore iniziale «Ciao», grande. Aprire Testo riporta la sorgente al
+  testo.
+- **font.** Schede che scorrono in orizzontale (`scroll-snap`): ognuna mostra il testo del cliente nel
+  font. I TTF si caricano con `FontFace` da `import.meta.env.BASE_URL` + `font.file`. `select
+  name="fontId"` resta nascosto ed è la fonte di verità. Con un'immagine come sorgente lo strumento è
+  attenuato. **v1.1**: miniature 2D per i font a tratto singolo.
+- **size.** Chip S/M/L/XL da `src/ui/sizes.ts` (`.size-chip[data-size=mm]`, `S 80`, `M 120`, `L 180`,
+  `XL 250`) più `input name="heightMm"` con − e + da 10 mm (limiti 40–800). L'altezza è la sommità
+  della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis). Cambiare la misura scala i
+  tracciati già ritoccati (§5bis). **v1.1**: prezzo su ogni taglia; taglie disattivate sotto il minimo.
+- **color.** Nove pallini, `input type="color" name="color"` e `radio name="effect"` fisso/arcobaleno.
+  Il colore scelto aggiorna `--neon` e `--on-neon` (chiaro o scuro in base alla luminanza), usati da
+  «Richiedi», dallo strumento attivo e dai pulsanti primari. **v1.1**: un colore per spezzone.
+  Sotto, il **fondale**: `radio name="plateMaterial"` nessuno / trasparente / nero / legno, come
+  tessere col materiale reale. Con un materiale, `radio name="plateShape"` rettangolo (`"rect"`) /
+  pillola (`"pill"`) / sagomato (`"contour"`) e `input name="plateMarginMm"` (10–60 mm, §13).
+  L'anteprima resta visibile e mostra fori e spessore veri. Gli altri parametri di §13 restano solo
+  in admin. Sta in questo foglio, non nel dock: gli strumenti restano sei (a 390 px un settimo non
+  entra) e il foglio Altro copre l'anteprima con l'editor.
+- **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
+  sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
+  testo» (`#back-to-text`), come in §4bis.
+- **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
+  §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
+  e cornice stanno sulla barra dell'anteprima, non in questo foglio.
+- **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML;
+  include il fondale (nessuno, oppure materiale, forma e margine).
+  `#blocked-reason` è visibile quando l'invio è bloccato. `#submit-order` «Invia richiesta»,
+  `#download-stl`. **v1.1**: prezzo, alimentatore, fissaggio, bozza di approvazione e modulo (12.7).
+
+Ogni cambio aggiorna il 3D quando è pronto (§5). Le scelte restano cambiando strumento. **v1.1**, oltre
+a quanto segnato sopra: prezzo indicativo, sfondi e quote dell'anteprima (12.3), bordo dritto/smussato,
+preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3 e §13 restano solo in admin.
 
 ### 12.3 Anteprima ambientata
 
 - Sfondi selezionabili (muro chiaro, muro scuro, mattoni, legno, neutro di §5): texture nostre in
   `public/backgrounds/`, ≤ 300 kB, con versione mobile. Nella pagina di prova vanno bene pattern
   generati.
-- Quote in cm attivabili; riferimento di scala opzionale (sagoma neutra di una presa o di una porta).
+- Quote in cm attivabili, che con un fondale includono la lastra; riferimento di scala opzionale
+  (sagoma neutra di una presa o di una porta).
 - Interruttore accesa/spenta (§5).
 
 ### 12.4 Vincoli comprensibili
@@ -776,6 +867,7 @@ Gli avvisi di §5, §4bis e §5bis sono per l'admin. Il cliente vede solo questi
 |---|---|---|
 | altezza minima (curve, fusioni) | «A questa misura le curve sono troppo strette: da X cm in su» + «porta a X cm» | sì |
 | errori dell'editor (§5bis: curve sotto R_MIN, fusioni, spezzoni corti) | marcatore sul tracciato + «correggi o annulla» | sì |
+| fondale oltre il piano del laser (§13) | «Il fondale è più grande del massimo che tagliamo: riduci misura o margine» | sì |
 | carattere senza glifo | «Questo font non ha il carattere "ñ"» | no |
 | immagine a bassa risoluzione | «Immagine poco definita per questa misura: fino a X cm, o caricane una più grande» | no |
 | tratto non uniforme | «Prova la modalità Contorno» + pulsante | no |
@@ -783,7 +875,7 @@ Gli avvisi di §5, §4bis e §5bis sono per l'admin. Il cliente vede solo questi
 | puntino senza striscia | «Il puntino non si accende sotto X cm» | no |
 | spigoli (`CUSP_MODE` `"split"`) | niente | no |
 
-Un vincolo bloccante disattiva il passo 7 mostrando il motivo, non nasconde il pulsante.
+Un vincolo bloccante disattiva «Invia richiesta» e mostra il motivo in `#blocked-reason`; non nasconde il pulsante.
 
 ### 12.5 Prezzo
 
@@ -794,28 +886,31 @@ uguale con o senza `paths`.
 volumeMm3   = area(outline) · (FLOOR + CHANNEL_DEPTH) − area(canale) · CHANNEL_DEPTH
 grammi      = volumeMm3 / 1000 · PLA_DENSITY · INFILL_FACTOR      (+ diffusore se scelto)
 striscia    = Σ cutLengthMm / 1000                                 (m)
+fondale     = area(plateOutline) / 1e6 · EUR_PER_M2[material]
+            + perimetro(tagli del fondale) / 1000 · EUR_PER_M_LASER  (0 senza fondale)
 prezzo      = BASE
             + striscia · EUR_PER_M_STRIP
             + grammi   · EUR_PER_G_PRINT
             + assembly.segments     · EUR_PER_SEGMENT
             + assembly.solderJoints · EUR_PER_JOINT
             + alimentatore(supplyA)                                 (tabella a scaglioni)
+            + fondale
             + opzioni
 prezzoCliente = max(PRICE_MIN, arrotonda_su(prezzo · MARGIN, 5 €))
 ```
 
 `priceOrder` riceve la scelta del diffusore e le misure del 2D (aree, somma dei `cutLengthMm`,
-`assembly`, `supplyA`, spessori): non aspetta le mesh. Il volume del diffusore, se `customer.diffuser` è
-vero, è `area(outline) · DIFFUSER_T` (pezzo pieno, senza `INFILL_FACTOR`). `supplyA` 0 non
-aggiunge l'alimentatore; altrimenti vale il primo scaglione con `maxA` ≥ `supplyA`. Effetto e
-bozza restano a 0: gli effetti sono di serie (§12.1). `arrotonda_su` è l'eccesso al multiplo
-di 5 €. Un volume negativo si tratta come 0.
+`assembly`, `supplyA`, spessori, area e perimetro dei tagli del fondale): non aspetta le mesh. Il
+volume del diffusore, se `customer.diffuser` è vero, è `area(outline) · DIFFUSER_T` (pezzo pieno,
+senza `INFILL_FACTOR`). `supplyA` 0 non aggiunge l'alimentatore; altrimenti vale il primo scaglione
+con `maxA` ≥ `supplyA`. Effetto e bozza restano a 0: gli effetti sono di serie (§12.1).
+`arrotonda_su` è l'eccesso al multiplo di 5 €. Un volume negativo si tratta come 0.
 
 - Costanti con `PRICING_VERSION` (es. `"2026-11"`), valori **segnaposto** finché non fissati (§10).
 - Prezzo **indicativo**, IVA inclusa, spedizione a parte, confermato con la bozza.
-- Ogni taglia del passo 3 mostra il proprio prezzo: il worker calcola il 2D delle altre altezze in
-  sequenza, dopo quella selezionata.
-- In admin e in `shop-test.html`: scomposizione voce per voce.
+- Ogni taglia dello strumento Misura mostrerà il proprio prezzo (v1.1): il worker calcola il 2D delle
+  altre altezze in sequenza, dopo quella selezionata. La pagina cliente non mostra ancora il prezzo.
+- In admin: scomposizione voce per voce.
 - Stesso ordine + stessa `PRICING_VERSION` → stesso prezzo (test).
 
 ### 12.6 Condivisione
@@ -827,21 +922,22 @@ di 5 €. Un volume negativo si tratta come 0.
 - Il link e il file contengono solo l'ordine (§6), mai contatti.
 - All'apertura: migrazione (§6), campi sconosciuti ignorati (anche i contatti), valori fuori limite
   riportati al limite con avviso, mai un'eccezione. Limiti: altezza 40–800 mm, `WALL` 1,6–5 mm (§1),
-  soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`).
-  `effect`, `mount`, `plug`, `trace` o `sizePreset` sconosciuti tornano al default. `generatorVersion`
-  diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono la lunghezza UTF-8 di `#o=` più
-  il base64url, senza padding.
+  soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`),
+  `plate.marginMm` e `plate.cornerRMm` nei limiti di §13. `effect`, `mount`, `plug`, `trace` o
+  `sizePreset` sconosciuti tornano al default; `plate.shape` o `plate.material` sconosciuti danno
+  `plate: null`. `generatorVersion` diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono
+  la lunghezza UTF-8 di `#o=` più il base64url, senza padding.
 
 ### 12.7 Richiesta
 
-Nessun pagamento (§9): il passo 7 invia una **richiesta**.
+Nessun pagamento (§9): il foglio Richiedi invia una **richiesta**.
 
 - Campi: nome, email, telefono (facoltativo), CAP e città, data entro cui serve (facoltativa), note,
   consenso privacy (obbligatorio); con un'immagine, la casella sui diritti d'uso (§10).
 - Invio v1: `mailto:` con oggetto «Richiesta insegna — <testo o nome file>», riepilogo, prezzo
   indicativo, `PRICING_VERSION` e il link 12.6 (o l'invito ad allegare il `.json`).
 - Pagina di conferma con «cosa succede adesso»; tempi da `copy.it.ts`.
-- L'invio senza client di posta (form esterno o funzione serverless) è una domanda aperta (§10).
+- L'invio senza client di posta passa all'integrazione WooCommerce (§11).
 
 ### 12.8 Preventivo su misura
 
@@ -855,26 +951,85 @@ Non stanno sotto il configuratore (12.2: una schermata): si aprono dal pulsante 
 sovrapposto, chiudibile con Esc o con «Torna all'insegna», senza perdere lo stato. In quest'ordine:
 
 1. **Come funziona**: crea, ricevi la bozza, ricevi l'insegna.
-2. **Cosa c'è nella scatola**: esploso cornice / striscia / diffusore / alimentatore / fissaggi,
-   generato dalla scena three.js.
+2. **Cosa c'è nella scatola**: esploso cornice / striscia / diffusore / fondale / alimentatore /
+   fissaggi, generato dalla scena three.js.
 3. **Prima e dopo**: slider anteprima / foto reale, solo con foto nostre (`public/gallery/`).
 4. **FAQ**: sicurezza (5 V, niente vetro, niente calore), consumi, montaggio, pulizia, effetti,
    garanzia, tempi e spedizione, immagini e diritti, modifiche dopo l'ordine.
 
 ### 12.9bis Scaricare l'STL
 
-La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. BOM, DXF e
-SVG restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL (test)» fa lo stesso
-export, per chi sta provando il flusso del §12.
+La pagina cliente (`index.html`) scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`.
+BOM, DXF, SVG e file del fondale restano in admin.
 
 ### 12.10 Test
 
-- Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1 e v2
-  migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
-  → niente link, scaricamento `.json`.
-- Smoke (Playwright): con «Ciao Torino» compaiono prezzo e quattro taglie; una taglia sotto il
-  minimo è disattivata con motivo; il link ricostruisce testo, font e altezza; un SVG caricato
-  mostra prezzo e anteprima; a 1280 × 800 e a 390 × 844 la pagina non scorre (`scrollHeight` ≤ altezza della finestra) né in
-  orizzontale né in verticale; «Avanti» e «Indietro» cambiano passo e la barra dei passi permette di
-  tornare a uno già visitato; «Info» si apre e si chiude con Esc; Paper.js non si scarica
+- Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1, v2 e v3
+  migrati a v4 con gli stessi STL e la BOM di prima più `"plate": null`; hash malformato → avviso,
+  nessuna eccezione; ordine oltre 8 kB → niente link, scaricamento `.json`.
+- Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
+  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; ogni strumento apre
+  un solo `.pane` visibile; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
+  mobile «Fatto» chiude il foglio; nel foglio Colore un fondale aggiorna l'anteprima. **v1.1**:
+  prezzo (anche del fondale), taglia sotto il minimo disattivata con motivo, link che ricostruisce
+  testo, font, altezza e fondale, «Info» che si apre e si chiude con Esc. Paper.js non si scarica
   finché l'editor non si apre.
+
+## 13. Fondale (lastra laser)
+
+Il fondale è opzionale e visibile nell'anteprima con materiale, spessore e fori reali.
+Anteprima ed export derivano dagli stessi poligoni (mm): nessuna geometria solo-visiva.
+`generate` restituisce `plateOutline`, `plateHoles` e `plateMesh` (§5); senza fondale sono `null`.
+
+### Parametri (`src/config.ts`)
+
+| Parametro | Default | Significato |
+|---|---|---|
+| `PLATE_MARGIN` | 20 | margine fra outline dell'insegna e bordo della lastra (cliente: 10–60 mm) |
+| `PLATE_CORNER_R` | 8 | raggio degli angoli per `rect` (0–50 mm) |
+| `PLATE_MAX_W` / `_H` | `null` | piano utile del laser. `null` non blocca; con un numero, oltre è vincolo bloccante (§12.4) |
+| `PLATE_FIX_HOLE_D` | 3.4 | fori di fissaggio allineati agli ancoraggi (dipende dal fissaggio, §10) |
+| `PLATE_MOUNT_HOLE_D` | 5.0 | fori di montaggio a parete |
+| `PLATE_MOUNT_INSET` | 10 | distanza dei fori di montaggio dal bordo |
+| `PLATE_WIRE_HOLES` | true | fori passanti per asole e cavo («Passaggi dei fili») |
+
+### Forme (`manifold-3d` CrossSection, giunzioni arrotondate)
+
+- `rect`: rettangolo che contiene l'outline + `PLATE_MARGIN`, angoli `PLATE_CORNER_R`
+- `pill`: come rect con raggio = metà del lato corto
+- `contour`: offset dell'outline di `PLATE_MARGIN`, buchi interni riempiti, parti separate unite
+
+### Materiali (scelti dal cliente)
+
+| id | Anteprima | `PLATE_T` | `PLATE_KERF` | Note |
+|---|---|---|---|---|
+| `clear` | acrilico trasparente, fori e fili visibili | 3 | DA TARARE | bordo leggermente illuminato |
+| `black` | acrilico nero lucido | 3 | DA TARARE | riflessi del neon |
+| `wood` | compensato/MDF, bordo bruciato scuro | 4 | DA TARARE | riflesso opaco |
+
+Spessori segnaposto: vanno sostituiti con quelli dei materiali acquistati (§10).
+In `src/viewer/plateMaterials.ts`: `clear` con `MeshPhysicalMaterial` (`transmission` alta,
+`roughness` bassa, `ior` 1,49, `thickness` = `PLATE_T`); `black` con `MeshStandardMaterial` scuro e
+`roughness` bassa; `wood` con texture procedurale (o piccola immagine in `public/`) e bordo scuro.
+
+### Fori
+
+Fissaggio allineati agli ancoraggi dell'housing, cavo principale, passaggi dei fili (sotto), fori di
+montaggio a parete. Compensazione `PLATE_KERF`: il contorno si allarga di kerf/2 e i fori si
+restringono di kerf/2, così le misure finali sono quelle nominali.
+
+### Passaggi dei fili
+
+I fili che escono dall'insegna attraversano il fondale se `PLATE_WIRE_HOLES` è vero (default `true`,
+in `src/config.ts`): un foro in corrispondenza di ogni asola e del foro cavo. `false` lascia il
+fondale chiuso in quei punti. Non cambia cornice né diffusore. Resta una domanda aperta (§10) finché
+non si misura sul campione.
+
+### Export
+
+`plate.svg` (+ `plate.dxf`), in mm, **visto dal retro come `back.dxf`**, così i due file si
+sovrappongono; testo «RETRO» sul layer di incisione. Colori/layer: blu = fori (taglio, per primi),
+rosso = contorno (taglio, per ultimo), verde = incisione riferimenti.
+Nella BOM `plate` = `{ shape, material, widthMm, heightMm, areaMm2, cutLengthMm, thicknessMm,
+fixHoles, mountHoles, wireHoles }`.
+
