@@ -78,10 +78,20 @@ app.innerHTML = `
       <div id="stage"></div>
       <canvas id="path-editor" hidden></canvas>
       <div class="hud">
-        <div class="mode-switch" role="radiogroup" aria-label="Vista">
-          <label><input type="radio" name="mode" value="accesa" checked><span>Accesa</span></label>
-          <label><input type="radio" name="mode" value="spenta"><span>Spenta</span></label>
+        <div class="hud-view">
+          <div class="mode-switch" role="radiogroup" aria-label="Vista">
+            <label><input type="radio" name="mode" value="accesa" checked><span>Accesa</span></label>
+            <label><input type="radio" name="mode" value="spenta"><span>Spenta</span></label>
+          </div>
+          <div class="mode-switch diffuser-switch" role="radiogroup" aria-label="Diffusore">
+            <label><input type="radio" name="diffuser" value="on" checked><span>Con diffusore</span></label>
+            <label><input type="radio" name="diffuser" value="off"><span>Senza diffusore</span></label>
+          </div>
         </div>
+        <label class="wall-field">
+          <span>Cornice mm</span>
+          <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}" aria-label="Cornice in millimetri">
+        </label>
         <button type="button" id="open-request" aria-pressed="false">Richiedi</button>
       </div>
       <div class="stage-meta">
@@ -138,13 +148,6 @@ app.innerHTML = `
           <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
         </div>
         <div class="pane" data-pane="more" hidden>
-          <div class="choice" role="radiogroup" aria-label="Diffusore">
-            <label><input type="radio" name="diffuser" value="on" checked><span>Con diffusore</span></label>
-            <label><input type="radio" name="diffuser" value="off"><span>Senza diffusore</span></label>
-          </div>
-          <label class="field">Cornice mm
-            <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}">
-          </label>
           <div class="actions">
             <button type="button" id="edit-paths" disabled>${copy.buttons.editPaths}</button>
             <button type="button" id="restore-paths" disabled>${copy.buttons.restorePaths}</button>

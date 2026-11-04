@@ -732,7 +732,8 @@ copre. All'apertura nessun foglio è aperto.
 
 ```
 ┌──────────────────────────────┐
-│ (Accesa | Spenta)   Richiedi │
+│ Accesa|Spenta  Cornice mm  Richiedi │
+│ Con|Senza diffusore               │
 │                              │
 │        «Ciao» accesa         │
 │                              │
@@ -745,8 +746,10 @@ copre. All'apertura nessun foglio è aperto.
 ```
 
 - **Anteprima** (`#stage`) a tutto schermo. Sovrapposti in alto: a sinistra la pillola Accesa/Spenta
-  (`radio name="mode"`), a destra «Richiedi» (`#open-request`) nel colore scelto, con un leggero
-  alone. In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
+  (`radio name="mode"`). Subito sotto, la pillola Con diffusore / Senza diffusore (`radio
+  name="diffuser"`): se è off la scena va in «senza diffusore», altrimenti resta accesa o spenta.
+  Fra quel blocco e «Richiedi» (`#open-request`, nel colore scelto, con un leggero alone) c'è
+  `input name="wallMm"` (`WALL`, 1,6–5 mm). In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
   destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
   ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
 - **Dock** (`nav.dock`), sempre visibile: sei strumenti grandi (≥ 48 px, icona + etichetta), ciascuno
@@ -780,10 +783,9 @@ Ogni foglio è un `.pane[data-pane=…]`:
 - **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
   sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
   testo» (`#back-to-text`), come in §4bis.
-- **more.** `radio name="diffuser"` on/off: se è off la scena va in «senza diffusore», altrimenti resta
-  accesa o spenta. Poi `input name="wallMm"` (`WALL`, 1,6–5 mm, §1), `#edit-paths`, `#restore-paths` e
-  `#path-toolbar`. «Modifica tracciati» apre l'editor §5bis sopra l'anteprima. Cambiare testo, font o
-  immagine scarta le modifiche dopo conferma.
+- **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
+  §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
+  e cornice stanno sulla barra dell'anteprima, non in questo foglio.
 - **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML.
   `#blocked-reason` è visibile quando l'invio è bloccato. `#submit-order` «Invia richiesta»,
   `#download-stl`. **v1.1**: prezzo, alimentatore, fissaggio, bozza di approvazione e modulo (12.7).
