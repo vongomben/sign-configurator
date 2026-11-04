@@ -14,7 +14,7 @@ import { applyCoverage, coverSign } from '../geometry/coverage';
 import { buildStrip, buildStripFromPieces, type StripModel } from '../geometry/strip';
 import { dotSegment, flattenPaths, type EditSegment } from '../editor/paths';
 import { cutCrossingGaps, intersectPaths, resolveCrossings } from '../editor/crossings';
-import { migrateOrder, type OrderV1, type SignOrder, type SignOrderV3 } from '../order/schema';
+import { migrateOrder, type AnyOrder, type OrderV1, type SignOrder, type SignOrderV4 } from '../order/schema';
 import { layoutRaster } from '../sources/bitmapCodec';
 import { layoutSvg } from '../sources/svgPaths';
 
@@ -45,7 +45,8 @@ export interface GenerateResult {
   lightPoints: LightPoint[];
   /** Distanza faccia LED–diffusore, mm. È la sigma della gaussiana in anteprima. */
   ledGapMm: number;
-  bom: Bom;
+  /** BOM di geometria più `plate`. Senza fondale è null (niente geometria lastra in questa fase). */
+  bom: Bom & { plate: null };
   warnings: string[];
   /** Spezzoni dopo [D], prima di Chaikin. «Modifica tracciati» parte da qui. */
   segments: EditSegment[];
@@ -79,7 +80,7 @@ function copyMesh(mesh: Mesh): MeshData {
 }
 
 /** Con `paths` la geometria è già in mm: niente [A]–[D] e niente Chaikin. */
-function stripFromPaths(order: SignOrderV3, params: ReturnType<typeof resolveParams>, warnings: string[]): StripModel {
+function stripFromPaths(order: SignOrderV4, params: ReturnType<typeof resolveParams>, warnings: string[]): StripModel {
   const flat = flattenPaths(order.paths ?? []);
   const hits = intersectPaths(flat.curves);
   const resolved = resolveCrossings(hits, order.crossings);
@@ -107,7 +108,7 @@ function stripFromPaths(order: SignOrderV3, params: ReturnType<typeof resolvePar
 }
 
 /** Pipeline completa. `read` serve ai test in Node; nel browser il worker usa fetch. */
-export async function generateSign(order: SignOrder | OrderV1 | SignOrderV3, read?: FontBytesReader): Promise<GenerateResult> {
+export async function generateSign(order: AnyOrder, read?: FontBytesReader): Promise<GenerateResult> {
   const current = migrateOrder(order);
   const params = resolveParams(current.params);
   const warnings: string[] = [];
@@ -195,7 +196,7 @@ export async function generateSign(order: SignOrder | OrderV1 | SignOrderV3, rea
         params,
       ),
       ledGapMm: ledToDiffuserMm(params),
-      bom: strip.bom,
+      bom: { ...strip.bom, plate: null },
       warnings,
       segments: editSegments(strip),
     };

@@ -1,13 +1,22 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
 import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
+import { PRICING_VERSION } from '../pricing';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
 import type { PathEditor } from '../editor/editor';
 import { FONTS } from '../fonts/registry';
-import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
-import type { TraceMode } from '../order/schema';
+import {
+  DEFAULT_CUSTOMER,
+  type LightEffect,
+  type OrderCrossing,
+  type OrderPath,
+  type OrderSource,
+  type SignOrderV4,
+  type SizePreset,
+  type TraceMode,
+} from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
@@ -229,6 +238,33 @@ function traceMode(): TraceMode {
 
 function diffuserOn(): boolean {
   return document.querySelector<HTMLInputElement>('input[name="diffuser"][value="on"]')!.checked;
+}
+
+function effectOf(): LightEffect {
+  const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
+  return effect?.value === 'arcobaleno' ? 'arcobaleno' : 'colore fisso';
+}
+
+function sizePresetOf(heightMm: number): SizePreset | null {
+  return SIZES.find((size) => size.heightMm === heightMm)?.id ?? null;
+}
+
+function customerOrder(source: OrderSource): SignOrderV4 {
+  const heightMm = Number(heightInput.value);
+  return {
+    schemaVersion: ORDER_SCHEMA_VERSION,
+    generatorVersion: GENERATOR_VERSION,
+    pricingVersion: PRICING_VERSION,
+    source,
+    heightMm,
+    sizePreset: sizePresetOf(heightMm),
+    color: color.value,
+    params: { WALL: wallMm() },
+    paths: edited?.paths ?? null,
+    crossings: edited?.crossings ?? [],
+    customer: { ...DEFAULT_CUSTOMER, effect: effectOf(), diffuser: diffuserOn() },
+    plate: null,
+  };
 }
 
 function litOn(): boolean {
@@ -563,7 +599,7 @@ async function showSign(): Promise<void> {
     status.textContent = 'Carica un file SVG, PNG o JPG.';
     return;
   }
-  let order: SignOrder;
+  let order: SignOrderV4;
   let notes: string[] = [];
   if (image && raster) {
     const built = rebuildRaster(raster.luminance, raster.width, raster.height, {
@@ -579,46 +615,19 @@ async function showSign(): Promise<void> {
     }
     paintThresholdPreview(thresholdPreview, built.binary);
     notes = raster.warnings;
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: built.source,
-      heightMm,
-      color: color.value,
-      params: { WALL: wallMm() },
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-    };
+    order = customerOrder(built.source);
   } else if (image && svgMarkup) {
     try {
       const imported = importSvg(svgMarkup, { heightMm, name: svgName, trace: traceMode() });
       notes = imported.warnings;
-      order = {
-        schemaVersion: ORDER_SCHEMA_VERSION,
-        generatorVersion: GENERATOR_VERSION,
-        source: imported.source,
-        heightMm,
-        color: color.value,
-        params: { WALL: wallMm() },
-        paths: edited?.paths ?? null,
-        crossings: edited?.crossings ?? [],
-      };
+      order = customerOrder(imported.source);
     } catch (err) {
       if (id !== request) return;
       status.textContent = err instanceof Error ? err.message : String(err);
       return;
     }
   } else {
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: { kind: 'text', text, fontId: fontInput.value },
-      heightMm,
-      color: color.value,
-      params: { WALL: wallMm() },
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-    };
+    order = customerOrder({ kind: 'text', text, fontId: fontInput.value });
   }
   status.textContent = 'Generazione…';
   const label = fileLabel();

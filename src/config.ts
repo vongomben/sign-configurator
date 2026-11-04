@@ -1,7 +1,37 @@
 // Tutte le misure in millimetri, gli angoli in gradi (SPEC §1-§3).
 
 export const GENERATOR_VERSION = '0.2.0';
-export const ORDER_SCHEMA_VERSION = 2;
+export const ORDER_SCHEMA_VERSION = 4 as const;
+
+/** Margine lastra, mm (SPEC §13). Il cliente sta fra min e max. */
+export const PLATE_MARGIN = 20;
+export const PLATE_MARGIN_MIN = 10;
+export const PLATE_MARGIN_MAX = 60;
+/** Raggio angoli di `rect`, mm (SPEC §13). */
+export const PLATE_CORNER_R = 8;
+export const PLATE_CORNER_R_MIN = 0;
+export const PLATE_CORNER_R_MAX = 50;
+/**
+ * Piano utile del laser, mm. `null` finché non misurato: il vincolo di §12.4 non scatta.
+ */
+export const PLATE_MAX_W: number | null = null;
+export const PLATE_MAX_H: number | null = null;
+/** Fori di fissaggio allineati agli ancoraggi, mm. */
+export const PLATE_FIX_HOLE_D = 3.4;
+/** Fori di montaggio a parete, mm. */
+export const PLATE_MOUNT_HOLE_D = 5.0;
+/** Distanza dei fori di montaggio dal bordo, mm. */
+export const PLATE_MOUNT_INSET = 10;
+/** Fori passanti sotto asole e cavo. `false` lascia la lastra chiusa (SPEC §13). */
+export const PLATE_WIRE_HOLES = true;
+/** Spessore lastra per materiale, mm. Segnaposto finché non si compra il foglio. */
+export const PLATE_T = Object.freeze({ clear: 3, black: 3, wood: 4 });
+/** Kerf laser per materiale, mm. `null` finché non si misura (DA TARARE). */
+export const PLATE_KERF: Readonly<Record<keyof typeof PLATE_T, number | null>> = Object.freeze({
+  clear: null,
+  black: null,
+  wood: null,
+});
 
 /** Pagina cliente: offre il download di housing.stl e, se attivo, diffuser.stl (SPEC §5). */
 export const CUSTOMER_STL_DOWNLOAD = true;

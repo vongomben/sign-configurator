@@ -54,4 +54,24 @@ describe('condivisione', () => {
     expect(read.warnings.some((warning) => warning.includes('email'))).toBe(true);
     expect(JSON.stringify(read.order)).not.toContain('email');
   });
+
+  it('margine e raggio fuori limite si riportano al limite; forma o materiale sconosciuti tolgono il fondale', () => {
+    const order = migrateOrder(sample());
+    const wide = decodeShare(JSON.stringify({
+      ...order,
+      plate: { shape: 'rect', material: 'clear', marginMm: 80, cornerRMm: -2 },
+    }));
+    expect(wide.order?.plate).toEqual({ shape: 'rect', material: 'clear', marginMm: 60, cornerRMm: 0 });
+    expect(wide.warnings.some((warning) => warning.includes('Margine'))).toBe(true);
+    expect(wide.warnings.some((warning) => warning.includes('Raggio'))).toBe(true);
+
+    const raw = JSON.parse(JSON.stringify(order)) as { customer: { effect: string }; plate?: unknown };
+    raw.customer.effect = 'fisso';
+    raw.plate = { shape: 'round', material: 'glass', marginMm: 20, cornerRMm: 8 };
+    const unknown = decodeShare(JSON.stringify(raw));
+    expect(unknown.order?.plate).toBeNull();
+    expect(unknown.order?.customer.effect).toBe('colore fisso');
+    expect(unknown.warnings.some((warning) => warning.includes('Fondale'))).toBe(true);
+    expect(unknown.warnings.some((warning) => warning.includes('Effetto'))).toBe(true);
+  });
 });

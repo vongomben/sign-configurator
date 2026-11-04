@@ -642,7 +642,7 @@ freccia su ogni spezzone.
 - `shape`: `"rect"` | `"pill"` | `"contour"`; `material`: `"clear"` | `"black"` | `"wood"` (§13).
   Spessore e kerf non sono nell'ordine: dipendono dal materiale e stanno in `src/config.ts`.
 - Migrazione v3 → v4: `plate: null`. Un ordine v1, v2 o v3 migrato produce gli stessi STL e la
-  stessa BOM.
+  BOM di prima più `"plate": null`.
 
 Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo, nessuna casualità).
 
@@ -725,9 +725,9 @@ acquistati e kerf misurato sul laser per ciascuno.
 Per la pagina cliente (§12), da decidere prima della pubblicazione: costanti di prezzo
 (`src/pricing.ts`, comprese quelle del fondale), tempi di produzione e consegna, garanzia, costi e
 zone di spedizione, chi emette la fattura, indirizzo email delle richieste, testo dell'informativa
-privacy. Per l'invio senza client di posta la direzione è l'integrazione WooCommerce (§11). Il §12
-si prova prima in `shop-test.html` (solo locale) e passa in `index.html` dopo l'approvazione di
-Davide.
+privacy. Per l'invio senza client di posta la direzione è l'integrazione WooCommerce (§11). La pagina
+cliente è `index.html`: si prova in locale e si pubblica con `npm run deploy` solo dopo
+l'approvazione di Davide.
 
 ## 11. Roadmap post-v1
 
@@ -746,9 +746,12 @@ Davide.
 ## 12. Pagina cliente: proposta di valore, flusso, prezzo
 
 Riferimento di mercato: i configuratori di insegne LED neon flex già in vendita (es. customneon.com).
-Se ne prende **la struttura** (passi numerati, prezzo immediato, barra di fiducia, preventivo su
-misura sempre raggiungibile, design condivisibile). **Non** se ne riprendono testi, immagini, nomi dei
-font, marchi o slogan.
+Se ne prende **la struttura** (l'insegna subito visibile, strumenti in un dock e un foglio alla volta,
+§12.2, prezzo immediato, barra di fiducia, preventivo su misura sempre raggiungibile, design
+condivisibile). **Non** se ne riprendono testi, immagini, nomi dei font, marchi o slogan.
+
+La pagina cliente è `index.html`. Si prova in locale con `npm run dev` e si pubblica con
+`npm run deploy` solo dopo l'approvazione di Davide.
 
 ### 12.1 Proposta di valore
 
@@ -907,7 +910,7 @@ con `maxA` ≥ `supplyA`. Effetto e bozza restano a 0: gli effetti sono di serie
 - Prezzo **indicativo**, IVA inclusa, spedizione a parte, confermato con la bozza.
 - Ogni taglia dello strumento Misura mostrerà il proprio prezzo (v1.1): il worker calcola il 2D delle
   altre altezze in sequenza, dopo quella selezionata. La pagina cliente non mostra ancora il prezzo.
-- In admin e in `shop-test.html`: scomposizione voce per voce.
+- In admin: scomposizione voce per voce.
 - Stesso ordine + stessa `PRICING_VERSION` → stesso prezzo (test).
 
 ### 12.6 Condivisione
@@ -956,15 +959,14 @@ sovrapposto, chiudibile con Esc o con «Torna all'insegna», senza perdere lo st
 
 ### 12.9bis Scaricare l'STL
 
-La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. BOM, DXF,
-SVG e file del fondale restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL
-(test)» fa lo stesso export, per chi sta provando il flusso del §12.
+La pagina cliente (`index.html`) scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`.
+BOM, DXF, SVG e file del fondale restano in admin.
 
 ### 12.10 Test
 
 - Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1, v2 e v3
-  migrati a v4 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
-  → niente link, scaricamento `.json`.
+  migrati a v4 con gli stessi STL e la BOM di prima più `"plate": null`; hash malformato → avviso,
+  nessuna eccezione; ordine oltre 8 kB → niente link, scaricamento `.json`.
 - Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
   (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; ogni strumento apre
   un solo `.pane` visibile; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
@@ -985,7 +987,7 @@ Anteprima ed export derivano dagli stessi poligoni (mm): nessuna geometria solo-
 |---|---|---|
 | `PLATE_MARGIN` | 20 | margine fra outline dell'insegna e bordo della lastra (cliente: 10–60 mm) |
 | `PLATE_CORNER_R` | 8 | raggio degli angoli per `rect` (0–50 mm) |
-| `PLATE_MAX_W` / `_H` | DA MISURARE | piano utile del laser: oltre, vincolo bloccante (§12.4) |
+| `PLATE_MAX_W` / `_H` | `null` | piano utile del laser. `null` non blocca; con un numero, oltre è vincolo bloccante (§12.4) |
 | `PLATE_FIX_HOLE_D` | 3.4 | fori di fissaggio allineati agli ancoraggi (dipende dal fissaggio, §10) |
 | `PLATE_MOUNT_HOLE_D` | 5.0 | fori di montaggio a parete |
 | `PLATE_MOUNT_INSET` | 10 | distanza dei fori di montaggio dal bordo |
