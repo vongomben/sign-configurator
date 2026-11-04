@@ -637,12 +637,17 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
   Una tantum, dopo l'installazione delle dipendenze: `npx playwright install chromium`.
 - Deploy:
   - **Il build pubblico contiene solo `index.html`** (pagina cliente): `npm run build:public`
-    (`vite build --mode public`), che è anche il passo prima di `npm run deploy`.
-  - `admin.html`, `debug.html`, `bend-test.html` (e `spec.html`) si usano **solo in locale** con
+    (`vite build --mode public`).
+  - Il sito pubblico è https://vongomben.github.io/sign-configurator/ . È il build di
+    `npm run build:public` (solo la pagina cliente). Il `base` in `vite.config.ts` resta
+    `/sign-configurator/`.
+  - `.github/workflows/deploy.yml`, a ogni push su `main`, esegue quel build e lo pubblica con
+    `actions/upload-pages-artifact` e `actions/deploy-pages`. Perché parta, in Settings → Pages la
+    sorgente deve essere **GitHub Actions**. Finché la sorgente è il branch `main`, quel branch
+    ospita direttamente il contenuto di `dist` (la pagina già compilata) e `index.dev.html` conserva
+    il sorgente della pagina.
+  - `admin.html`, `debug.html`, `bend-test.html` e `spec.html` si usano **solo in locale** con
     `npm run dev`; `npm run build` le compila tutte, per verifica.
-  - **L'hosting si sceglie più avanti**: GitHub Pages, Cloudflare Pages o Netlify. Il `base` in
-    `vite.config.ts` (`/sign-configurator/`) e lo script `deploy` (gh-pages) sono quelli di GitHub Pages
-    e vanno adattati alla scelta.
 
 ## 8. Struttura cartelle
 
@@ -660,8 +665,8 @@ src/
   order/schema.ts (tipi v3, migrazione v1 → v2 → v3)
   pricing.ts                      (§12.5, puro)
   order/share.ts                  (§12.6)
-  ui/copy.it.ts, sizes.ts, steps/ (§12)
-  ui/customer.ts, admin.ts, debug.ts
+  ui/copy.it.ts, sizes.ts
+  ui/customer.ts, customer.css, admin.ts, debug.ts
   tools/bendTest.ts (pagina), bendTestGeometry.ts (pezzi di prova A archi / B angoli, testabile in Node)
 index.html   (cliente, §12)
 admin.html   (admin: incolla o carica JSON, scarica ZIP)
@@ -714,50 +719,80 @@ Titolo di lavoro: *«Scrivi o disegna. Guarda la tua insegna come verrà stampat
 Tutti i testi in `src/ui/copy.it.ts`. **Barra di fiducia**: 3 voci da `copy.it.ts`; una voce con
 valore `null` (dato non ancora deciso, §10) non si mostra.
 
-### 12.2 Una schermata, un passo alla volta
+### 12.2 Mobile prima di tutto: l'insegna, poi gli strumenti
 
-Il configuratore occupa **una sola schermata** (`100dvh`) e la pagina non scorre.
+Niente procedura a passi. La prima cosa che si vede è l'insegna «Ciao» accesa, a tutto schermo.
+Una sola schermata (`100dvh`): la pagina non scorre mai. Gli stili stanno in `src/ui/customer.css`
+(importato da `customer.ts`), con il font di sistema e senza stili inline. `#stage` e il suo canvas
+sono alti il 100 % con `!important`: `scene.ts` lascia il `70vh` inline perché lo usa anche l'admin.
+Lo sfondo dell'anteprima cliente è nero; l'admin resta sul muro chiaro di §5.
 
-- **Desktop** (≥ 900 px): anteprima a sinistra (circa 65 % della larghezza), pannello del passo a
-  destra. **Mobile**: anteprima in alto (circa 45 % dell'altezza), pannello sotto. Se un passo non ci
-  sta, scorre solo il contenuto del pannello.
-- **In cima**: intestazione sottile con nome, barra di fiducia e pulsante «Info» (12.9); sotto, la
-  **barra dei passi** (numero e nome breve; su mobile solo i numeri). Il passo corrente è evidenziato,
-  quelli già visitati sono cliccabili, quelli successivi no.
-- **Un passo alla volta** nel pannello. In fondo al pannello, fissi: prezzo indicativo, «Indietro» e
-  «Avanti» (al passo 7 «Invia richiesta»). «Avanti» si disattiva solo per un vincolo bloccante del
-  passo corrente (12.4), con il motivo scritto accanto; i passi facoltativi hanno «Salta».
-- Ogni cambio aggiorna subito 2D e prezzo; il 3D quando è pronto (§5). Tornare indietro non perde le
-  scelte fatte.
-- Controlli dell'anteprima (sfondo, quote, accesa/spenta, 12.3) sovrapposti in un angolo
-  dell'anteprima, sempre disponibili: non sono un passo.
-- Nel passo 4 l'anteprima diventa la tela dell'editor (§5bis) e il pannello mostra i suoi strumenti;
-  «Fatto» torna all'anteprima 3D.
+Sotto i 900 px il foglio è una riga della griglia e l'anteprima si restringe sopra di esso: non la
+copre. All'apertura nessun foglio è aperto.
 
-I passi:
+```
+┌──────────────────────────────┐
+│ Accesa|Spenta  Cornice mm  Richiedi │
+│ Con|Senza diffusore               │
+│                              │
+│        «Ciao» accesa         │
+│                              │
+│ 114 LED              5 V · 9 A │
+├──────────────────────────────┤
+│  foglio, max 48dvh     Fatto │  ← chiuso all'avvio
+├──────────────────────────────┤
+│ Testo Font Misura Colore …   │
+└──────────────────────────────┘
+```
 
-1. **Testo o immagine.** Due schede. *Testo*: una riga, contatore, caratteri senza glifo segnalati.
-   *Immagine*: caricamento come §4bis (soglia, inverti, `trace` «Linea centrale» / «Contorno»), con
-   gli avvisi di bassa risoluzione e tratto non uniforme.
-2. **Font** (solo testo). Una scheda per font del registro (§4) con **il testo del cliente** in
-   miniatura 2D dalla pipeline, con debounce di 300 ms.
-3. **Dimensione.** Taglie in `src/ui/sizes.ts`: `S 80`, `M 120`, `L 180`, `XL 250` mm (default da
-   tarare), cioè la sommità della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis).
-   Ogni scheda mostra l'ingombro reale (larghezza × altezza di `outline` di [H]) e il prezzo. Le taglie
-   sotto l'altezza minima (§5) sono disattivate con motivo e altezza minima. «Misura libera»: slider
-   in mm con lo stesso limite.
-4. **Ritocca (facoltativo).** Pulsante «Modifica tracciati» → editor §5bis. Cambiare poi testo, font
-   o immagine scarta le modifiche dopo conferma (§5bis); cambiare la misura le scala.
-5. **Colore ed effetto.** Tavolozza + selettore libero; `"colore fisso"` / `"arcobaleno"`.
-   **v1.1**: un colore per spezzone, scelto toccandolo nell'anteprima.
-6. **Finitura.** Diffusore sì/no con le due anteprime affiancate («luce morbida» / «LED a vista»);
-   bordo «dritto» (`"square"`) o «smussato» (`"outer"`); spessore cornice (`WALL`, 1,6–5 mm, §1).
-   Gli altri parametri di §3 restano solo in admin.
-7. **Riepilogo e richiesta.** Scelte, alimentatore (taglio da `supplyA`, spina EU, non selezionabile),
-   fissaggio a parete, prezzo, toggle **bozza di approvazione** (default sì), poi il modulo (12.7).
+- **Anteprima** (`#stage`) a tutto schermo. Sovrapposti in alto: a sinistra la pillola Accesa/Spenta
+  (`radio name="mode"`). Subito sotto, la pillola Con diffusore / Senza diffusore (`radio
+  name="diffuser"`): se è off la scena va in «senza diffusore», altrimenti resta accesa o spenta.
+  Fra quel blocco e «Richiedi» (`#open-request`, nel colore scelto, con un leggero alone) c'è
+  `input name="wallMm"` (`WALL`, 1,6–5 mm). In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
+  destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
+  ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
+- **Dock** (`nav.dock`), sempre visibile: sei strumenti grandi (≥ 48 px, icona + etichetta), ciascuno
+  con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
+  «Immagine», `more` «Altro».
+- Toccare uno strumento apre un foglio dal basso (`.sheet`, max 48dvh, angoli arrotondati, «Fatto»
+  `#sheet-close`). Toccarlo di nuovo o «Fatto» lo chiude. Un solo foglio alla volta. Esc chiude il
+  foglio, tranne durante il ritocco e tranne quando il focus è su un campo.
+- Il canvas `#path-editor` sta sopra l'anteprima (`position: absolute`, 100 % con `!important`) ed è
+  visibile solo con il foglio Altro aperto. Cambiare foglio non chiama `editor.close()`.
 
-Nel pannello, sotto i pulsanti, un link discreto: **«Non riesci a ottenere quello che vuoi?»** →
-preventivo (12.8).
+**Desktop** (≥ 900 px): anteprima a sinistra, dock sotto; il foglio è una colonna fissa di 400 px a
+destra, sempre aperta (all'avvio su Testo, mai vuota), con il titolo dello strumento. Esc, sul
+desktop, lascia solo il foglio Richiedi e torna all'ultimo strumento.
+
+Ogni foglio è un `.pane[data-pane=…]`:
+
+- **text.** `input name="text"`, valore iniziale «Ciao», grande. Aprire Testo riporta la sorgente al
+  testo.
+- **font.** Schede che scorrono in orizzontale (`scroll-snap`): ognuna mostra il testo del cliente nel
+  font. I TTF si caricano con `FontFace` da `import.meta.env.BASE_URL` + `font.file`. `select
+  name="fontId"` resta nascosto ed è la fonte di verità. Con un'immagine come sorgente lo strumento è
+  attenuato. **v1.1**: miniature 2D per i font a tratto singolo.
+- **size.** Chip S/M/L/XL da `src/ui/sizes.ts` (`.size-chip[data-size=mm]`, `S 80`, `M 120`, `L 180`,
+  `XL 250`) più `input name="heightMm"` con − e + da 10 mm (limiti 40–800). L'altezza è la sommità
+  della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis). Cambiare la misura scala i
+  tracciati già ritoccati (§5bis). **v1.1**: prezzo su ogni taglia; taglie disattivate sotto il minimo.
+- **color.** Nove pallini, `input type="color" name="color"` e `radio name="effect"` fisso/arcobaleno.
+  Il colore scelto aggiorna `--neon` e `--on-neon` (chiaro o scuro in base alla luminanza), usati da
+  «Richiedi», dallo strumento attivo e dai pulsanti primari. **v1.1**: un colore per spezzone.
+- **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
+  sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
+  testo» (`#back-to-text`), come in §4bis.
+- **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
+  §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
+  e cornice stanno sulla barra dell'anteprima, non in questo foglio.
+- **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML.
+  `#blocked-reason` è visibile quando l'invio è bloccato. `#submit-order` «Invia richiesta»,
+  `#download-stl`. **v1.1**: prezzo, alimentatore, fissaggio, bozza di approvazione e modulo (12.7).
+
+Ogni cambio aggiorna il 3D quando è pronto (§5). Le scelte restano cambiando strumento. **v1.1**, oltre
+a quanto segnato sopra: prezzo indicativo, sfondi e quote dell'anteprima (12.3), bordo dritto/smussato,
+preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3 restano solo in admin.
 
 ### 12.3 Anteprima ambientata
 
@@ -783,7 +818,7 @@ Gli avvisi di §5, §4bis e §5bis sono per l'admin. Il cliente vede solo questi
 | puntino senza striscia | «Il puntino non si accende sotto X cm» | no |
 | spigoli (`CUSP_MODE` `"split"`) | niente | no |
 
-Un vincolo bloccante disattiva il passo 7 mostrando il motivo, non nasconde il pulsante.
+Un vincolo bloccante disattiva «Invia richiesta» e mostra il motivo in `#blocked-reason`; non nasconde il pulsante.
 
 ### 12.5 Prezzo
 
@@ -813,8 +848,8 @@ di 5 €. Un volume negativo si tratta come 0.
 
 - Costanti con `PRICING_VERSION` (es. `"2026-11"`), valori **segnaposto** finché non fissati (§10).
 - Prezzo **indicativo**, IVA inclusa, spedizione a parte, confermato con la bozza.
-- Ogni taglia del passo 3 mostra il proprio prezzo: il worker calcola il 2D delle altre altezze in
-  sequenza, dopo quella selezionata.
+- Ogni taglia dello strumento Misura mostrerà il proprio prezzo (v1.1): il worker calcola il 2D delle
+  altre altezze in sequenza, dopo quella selezionata. La pagina cliente non mostra ancora il prezzo.
 - In admin e in `shop-test.html`: scomposizione voce per voce.
 - Stesso ordine + stessa `PRICING_VERSION` → stesso prezzo (test).
 
@@ -834,7 +869,7 @@ di 5 €. Un volume negativo si tratta come 0.
 
 ### 12.7 Richiesta
 
-Nessun pagamento (§9): il passo 7 invia una **richiesta**.
+Nessun pagamento (§9): il foglio Richiedi invia una **richiesta**.
 
 - Campi: nome, email, telefono (facoltativo), CAP e città, data entro cui serve (facoltativa), note,
   consenso privacy (obbligatorio); con un'immagine, la casella sui diritti d'uso (§10).
@@ -872,9 +907,9 @@ export, per chi sta provando il flusso del §12.
 - Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1 e v2
   migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
   → niente link, scaricamento `.json`.
-- Smoke (Playwright): con «Ciao Torino» compaiono prezzo e quattro taglie; una taglia sotto il
-  minimo è disattivata con motivo; il link ricostruisce testo, font e altezza; un SVG caricato
-  mostra prezzo e anteprima; a 1280 × 800 e a 390 × 844 la pagina non scorre (`scrollHeight` ≤ altezza della finestra) né in
-  orizzontale né in verticale; «Avanti» e «Indietro» cambiano passo e la barra dei passi permette di
-  tornare a uno già visitato; «Info» si apre e si chiude con Esc; Paper.js non si scarica
-  finché l'editor non si apre.
+- Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
+  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; ogni strumento apre
+  un solo `.pane` visibile; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
+  mobile «Fatto» chiude il foglio. **v1.1**: prezzo, taglia sotto il minimo disattivata con motivo,
+  link che ricostruisce testo, font e altezza, «Info» che si apre e si chiude con Esc. Paper.js non
+  si scarica finché l'editor non si apre.
