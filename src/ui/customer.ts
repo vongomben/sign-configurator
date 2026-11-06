@@ -6,8 +6,7 @@ import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
 import type { PathEditor } from '../editor/editor';
 import { FONTS } from '../fonts/registry';
-import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
-import type { TraceMode } from '../order/schema';
+import { DEFAULT_CUSTOMER, PLATE_MATERIALS, type OrderCrossing, type OrderPath, type PlateMaterial, type SignOrder, type TraceMode } from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
@@ -67,6 +66,17 @@ const tools = [
   ['more', 'Altro'],
 ] as const;
 
+const PLATE_LABEL: Record<PlateMaterial, string> = {
+  clear: 'Trasparente',
+  white: 'Bianco',
+  black: 'Nero',
+};
+const plateRadios = PLATE_MATERIALS.map((material) => `
+  <label><input type="radio" name="plate" value="${material}"${material === DEFAULT_CUSTOMER.plate ? ' checked' : ''}><span>${PLATE_LABEL[material]}</span></label>`).join('');
+
+/** Sezioni del pannello desktop, nell'ordine di SPEC §12.2. */
+const PANEL_PANES = ['text', 'font', 'image', 'size', 'color', 'plate', 'more'] as const;
+
 app.innerHTML = `
   <div class="shell" data-sheet="">
     <h1 class="sr-only">Configuratore insegne neon</h1>
@@ -106,29 +116,16 @@ app.innerHTML = `
       </header>
       <div class="sheet-body">
         <div class="pane" data-pane="text" hidden>
+          <h3 class="pane-title">Testo</h3>
           <input name="text" value="Ciao" autocomplete="off" aria-label="Testo">
         </div>
         <div class="pane" data-pane="font" hidden>
+          <h3 class="pane-title">Font</h3>
           <div class="font-row">${fontCards}</div>
           <select name="fontId" hidden>${fontOptions}</select>
         </div>
-        <div class="pane" data-pane="size" hidden>
-          <div class="sizes">${sizeChips}</div>
-          <div class="height-step">
-            <button type="button" data-height-step="-10" aria-label="Meno 10 millimetri">−</button>
-            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="Altezza in millimetri">
-            <button type="button" data-height-step="10" aria-label="Più 10 millimetri">+</button>
-          </div>
-        </div>
-        <div class="pane" data-pane="color" hidden>
-          <div class="swatches">${swatches}</div>
-          <label class="color-free">Colore <input type="color" name="color" value="#ff2fd6"></label>
-          <div class="choice" role="radiogroup" aria-label="Effetto">
-            <label><input type="radio" name="effect" value="fisso" checked><span>Colore fisso</span></label>
-            <label><input type="radio" name="effect" value="arcobaleno"><span>Arcobaleno</span></label>
-          </div>
-        </div>
         <div class="pane" data-pane="image" hidden>
+          <h3 class="pane-title">Immagine</h3>
           <label class="image-drop">
             <span>Carica un'immagine</span>
             <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg">
@@ -147,7 +144,30 @@ app.innerHTML = `
           <canvas id="threshold-preview" data-source="raster" hidden></canvas>
           <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
         </div>
+        <div class="pane" data-pane="size" hidden>
+          <h3 class="pane-title">Misura</h3>
+          <div class="sizes">${sizeChips}</div>
+          <div class="height-step">
+            <button type="button" data-height-step="-10" aria-label="Meno 10 millimetri">−</button>
+            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="Altezza in millimetri">
+            <button type="button" data-height-step="10" aria-label="Più 10 millimetri">+</button>
+          </div>
+        </div>
+        <div class="pane" data-pane="color" hidden>
+          <h3 class="pane-title">Colore</h3>
+          <div class="swatches">${swatches}</div>
+          <label class="color-free">Colore <input type="color" name="color" value="#ff2fd6"></label>
+          <div class="choice" role="radiogroup" aria-label="Effetto">
+            <label><input type="radio" name="effect" value="fisso" checked><span>Colore fisso</span></label>
+            <label><input type="radio" name="effect" value="arcobaleno"><span>Arcobaleno</span></label>
+          </div>
+        </div>
+        <div class="pane" data-pane="plate" hidden>
+          <h3 class="pane-title">Fondale</h3>
+          <div class="choice" role="radiogroup" aria-label="Fondale">${plateRadios}</div>
+        </div>
         <div class="pane" data-pane="more" hidden>
+          <h3 class="pane-title">Tracciati</h3>
           <div class="actions">
             <button type="button" id="edit-paths" disabled>${copy.buttons.editPaths}</button>
             <button type="button" id="restore-paths" disabled>${copy.buttons.restorePaths}</button>
@@ -202,7 +222,6 @@ const desktop = window.matchMedia('(min-width: 900px)');
 
 let svgMarkup: string | null = null;
 let svgName = 'immagine.svg';
-let lastTool = 'text';
 let blockReason = '';
 
 interface RasterSession {
@@ -318,26 +337,46 @@ function renderSummary(): void {
   }
 }
 
+function showPanes(names: readonly string[]): void {
+  const allowed = new Set(names);
+  for (const el of document.querySelectorAll<HTMLElement>('.pane')) {
+    el.hidden = !allowed.has(el.dataset.pane ?? '');
+  }
+}
+
+function showPanel(): void {
+  shell.dataset.sheet = 'panel';
+  showPanes(PANEL_PANES);
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+    button.setAttribute('aria-pressed', 'false');
+  }
+  openRequest.setAttribute('aria-pressed', 'false');
+}
+
 function openSheet(pane: string): void {
+  if (isDesktop() && pane !== 'request') {
+    showPanel();
+    return;
+  }
   if (pane === 'text') selectKind('text');
   shell.dataset.sheet = pane;
   sheetTitle.textContent = TITLES[pane] ?? pane;
-  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = el.dataset.pane !== pane;
+  const names = pane === 'color' ? ['color', 'plate'] : [pane];
+  showPanes(names);
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
     button.setAttribute('aria-pressed', button.dataset.tool === pane ? 'true' : 'false');
   }
   openRequest.setAttribute('aria-pressed', pane === 'request' ? 'true' : 'false');
-  if (pane !== 'request') lastTool = pane;
   if (pane === 'request') renderSummary();
 }
 
 function closeSheet(): void {
   if (isDesktop()) {
-    openSheet(lastTool || 'text');
+    showPanel();
     return;
   }
   shell.dataset.sheet = '';
-  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = true;
+  showPanes([]);
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
     button.setAttribute('aria-pressed', 'false');
   }
@@ -345,7 +384,13 @@ function closeSheet(): void {
 }
 
 function toggleSheet(pane: string): void {
-  if (!isDesktop() && shell.dataset.sheet === pane) {
+  if (isDesktop()) {
+    if (pane !== 'request') return;
+    if (shell.dataset.sheet === 'request') showPanel();
+    else openSheet('request');
+    return;
+  }
+  if (shell.dataset.sheet === pane) {
     closeSheet();
     return;
   }
@@ -869,7 +914,9 @@ window.addEventListener('keydown', (event) => {
   closeSheet();
 });
 desktop.addEventListener('change', () => {
-  if (isDesktop() && !shell.dataset.sheet) openSheet('text');
+  if (shell.dataset.sheet === 'request') return;
+  if (isDesktop()) showPanel();
+  else closeSheet();
 });
 
 async function openEditor(): Promise<void> {
@@ -933,5 +980,5 @@ void (async () => {
   );
 })();
 
-if (isDesktop()) openSheet('text');
+if (isDesktop()) showPanel();
 void showSign();

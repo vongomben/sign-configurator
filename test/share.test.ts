@@ -54,4 +54,18 @@ describe('condivisione', () => {
     expect(read.warnings.some((warning) => warning.includes('email'))).toBe(true);
     expect(JSON.stringify(read.order)).not.toContain('email');
   });
+
+  it('il fondale white resta nel link e un materiale sconosciuto torna al trasparente', () => {
+    const order = migrateOrder(sample());
+    order.customer = { ...order.customer, plate: 'white' };
+    const saved = decodeShare(encodeShare(order).json);
+    expect(saved.warnings).toEqual([]);
+    expect(saved.order?.customer.plate).toBe('white');
+
+    const json = JSON.parse(encodeShare(order).json) as { customer: { plate: string } };
+    json.customer.plate = 'mirror';
+    const read = decodeShare(JSON.stringify(json));
+    expect(read.order?.customer.plate).toBe('clear');
+    expect(read.warnings.some((warning) => warning.includes('Fondale'))).toBe(true);
+  });
 });

@@ -605,13 +605,15 @@ freccia su ogni spezzone.
   "heightMm": 120, "sizePreset": "M", "color": "#ff2fd6", "params": {},
   "paths": null, "crossings": [],
   "customer": { "effect": "colore fisso", "diffuser": true, "mount": "wall",
-                "plug": "EU", "proof": true } }
+                "plug": "EU", "proof": true, "plate": "clear" } }
 ```
 
 - `customer` raccoglie le scelte del cliente che **non cambiano la geometria**: `effect`
   (`"colore fisso"` | `"arcobaleno"`), `diffuser`, `mount` (`"wall"`), `plug` (`"EU"`), `proof`
-  (bozza di approvazione). Il diffusore cambia solo se `diffuser.stl` si esporta; il profilo dei bordi
-  e lo spessore della cornice restano in `params` (`EDGE_PROFILE`, `WALL`), come oggi.
+  (bozza di approvazione), `plate` (`PlateMaterial`: `"clear"` | `"white"` | `"black"`, default
+  `"clear"`). Il fondale, per ora, non cambia la scena. Il diffusore cambia solo se `diffuser.stl`
+  si esporta; il profilo dei bordi e lo spessore della cornice restano in `params` (`EDGE_PROFILE`,
+  `WALL`), come oggi.
 - `sizePreset` è informativo: fa fede `heightMm`. `pricingVersion` fissa la tabella prezzi (§12.5).
 - Migrazione in `src/order/schema.ts`: v1 → v2 come oggi, poi v2 → v3 con `customer` ai default
   sopra, `sizePreset` e `pricingVersion` `null`. Un ordine v1 o v2 migrato produce **gli stessi STL
@@ -761,18 +763,25 @@ copre. All'apertura nessun foglio è aperto.
 - Il canvas `#path-editor` sta sopra l'anteprima (`position: absolute`, 100 % con `!important`) ed è
   visibile solo con il foglio Altro aperto. Cambiare foglio non chiama `editor.close()`.
 
-**Desktop** (≥ 900 px): anteprima a sinistra, dock sotto; il foglio è una colonna fissa di 400 px a
-destra, sempre aperta (all'avvio su Testo, mai vuota), con il titolo dello strumento. Esc, sul
-desktop, lascia solo il foglio Richiedi e torna all'ultimo strumento.
+**Desktop** (≥ 900 px): l'anteprima resta a sinistra, a tutta altezza. Il dock è nascosto. La colonna
+destra (400 px, lo stesso `.sheet`) è un pannello sempre aperto che mostra insieme, senza duplicare
+il markup, i `.pane` Testo, Font, Immagine, Misura, Colore, Fondale e Tracciati, in quest'ordine.
+Ogni sezione ha il titolo nel proprio pane (`.pane-title`); la barra con «Fatto» compare solo per
+Richiedi. Il pannello scorre al suo interno; la pagina no. «Richiedi» sostituisce il pannello con il
+solo pane `request`. Esc, sul desktop, chiude solo Richiedi e torna al pannello.
 
-Ogni foglio è un `.pane[data-pane=…]`:
+Ogni foglio è un `.pane[data-pane=…]`. Sul telefono se ne apre uno; Colore mostra anche `plate`.
+Sul desktop si vedono insieme, in quest'ordine:
 
-- **text.** `input name="text"`, valore iniziale «Ciao», grande. Aprire Testo riporta la sorgente al
-  testo.
+- **text.** `input name="text"`, valore iniziale «Ciao», grande. Aprire Testo, sul telefono, riporta
+  la sorgente al testo.
 - **font.** Schede che scorrono in orizzontale (`scroll-snap`): ognuna mostra il testo del cliente nel
   font. I TTF si caricano con `FontFace` da `import.meta.env.BASE_URL` + `font.file`. `select
   name="fontId"` resta nascosto ed è la fonte di verità. Con un'immagine come sorgente lo strumento è
   attenuato. **v1.1**: miniature 2D per i font a tratto singolo.
+- **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
+  sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
+  testo» (`#back-to-text`), come in §4bis.
 - **size.** Chip S/M/L/XL da `src/ui/sizes.ts` (`.size-chip[data-size=mm]`, `S 80`, `M 120`, `L 180`,
   `XL 250`) più `input name="heightMm"` con − e + da 10 mm (limiti 40–800). L'altezza è la sommità
   della «H» per il testo e l'altezza del riquadro per un'immagine (§4bis). Cambiare la misura scala i
@@ -780,10 +789,11 @@ Ogni foglio è un `.pane[data-pane=…]`:
 - **color.** Nove pallini, `input type="color" name="color"` e `radio name="effect"` fisso/arcobaleno.
   Il colore scelto aggiorna `--neon` e `--on-neon` (chiaro o scuro in base alla luminanza), usati da
   «Richiedi», dallo strumento attivo e dai pulsanti primari. **v1.1**: un colore per spezzone.
-- **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
-  sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
-  testo» (`#back-to-text`), come in §4bis.
-- **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
+- **plate.** Fondale: `radio name="plate"`, valori di `PlateMaterial` (`clear` Trasparente, default;
+  `white` Bianco; `black` Nero). Per ora è solo UI e non cambia la scena. Sul telefono sta nel foglio
+  Colore, sotto i colori. Sul desktop è la sezione fra Colore e Tracciati.
+- **more.** Nel dock del telefono si chiama «Altro»; nel pannello la sezione si chiama Tracciati.
+  `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
   §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
   e cornice stanno sulla barra dell'anteprima, non in questo foglio.
 - **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML.
@@ -863,7 +873,7 @@ di 5 €. Un volume negativo si tratta come 0.
 - All'apertura: migrazione (§6), campi sconosciuti ignorati (anche i contatti), valori fuori limite
   riportati al limite con avviso, mai un'eccezione. Limiti: altezza 40–800 mm, `WALL` 1,6–5 mm (§1),
   soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`).
-  `effect`, `mount`, `plug`, `trace` o `sizePreset` sconosciuti tornano al default. `generatorVersion`
+  `effect`, `mount`, `plug`, `trace`, `sizePreset` o `plate` sconosciuti tornano al default. `generatorVersion`
   diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono la lunghezza UTF-8 di `#o=` più
   il base64url, senza padding.
 
@@ -908,8 +918,11 @@ export, per chi sta provando il flusso del §12.
   migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
   → niente link, scaricamento `.json`.
 - Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
-  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; ogni strumento apre
-  un solo `.pane` visibile; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
-  mobile «Fatto» chiude il foglio. **v1.1**: prezzo, taglia sotto il minimo disattivata con motivo,
+  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale. Sotto i 900 px ogni
+  strumento del dock apre un solo `.pane` visibile, tranne Colore, che mostra anche `plate`; «Fatto»
+  chiude il foglio. Da 900 px il dock è nascosto e i pane Testo, Font, Immagine, Misura, Colore,
+  Fondale e Tracciati sono visibili insieme, in quest'ordine; «Richiedi» lascia visibile solo
+  `request` ed Esc torna al pannello. La taglia L porta `heightMm` a 180 e il riepilogo mostra
+  «18 cm». Il radio `plate` `white` si può scegliere. **v1.1**: prezzo, taglia sotto il minimo disattivata con motivo,
   link che ricostruisce testo, font e altezza, «Info» che si apre e si chiude con Esc. Paper.js non
   si scarica finché l'editor non si apre.

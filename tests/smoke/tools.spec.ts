@@ -39,22 +39,40 @@ for (const viewport of [
     expect(corners.ledLeft).toBeLessThan(corners.stageLeft + 24);
     await expectNoScroll(page);
 
+    const panel = ['text', 'font', 'image', 'size', 'color', 'plate', 'more'] as const;
+
     if (viewport.mobile) {
       await expect(page.locator('.pane:visible')).toHaveCount(0);
+      await expect(page.locator('.dock')).toBeVisible();
+      for (const tool of TOOLS) {
+        await page.locator(`[data-tool="${tool}"]`).click();
+        const visible = page.locator('.pane:visible');
+        if (tool === 'color') {
+          await expect(visible).toHaveCount(2);
+          await expect(page.locator('.pane[data-pane="color"]')).toBeVisible();
+          await expect(page.locator('.pane[data-pane="plate"]')).toBeVisible();
+        } else {
+          await expect(visible).toHaveCount(1);
+          await expect(visible).toHaveAttribute('data-pane', tool);
+          await expect(page.locator('.pane[data-pane="plate"]')).toBeHidden();
+        }
+        await expectNoScroll(page);
+      }
+      await page.locator('[data-tool="color"]').click();
+      await page.locator('.pane[data-pane="plate"] label', { hasText: 'Bianco' }).click();
+      await expect(page.locator('input[name="plate"][value="white"]')).toBeChecked();
     } else {
-      await expect(page.locator('.pane:visible')).toHaveCount(1);
-      await expect(page.locator('.pane:visible')).toHaveAttribute('data-pane', 'text');
-    }
-
-    for (const tool of TOOLS) {
-      await page.locator(`[data-tool="${tool}"]`).click();
-      const visible = page.locator('.pane:visible');
-      await expect(visible).toHaveCount(1);
-      await expect(visible).toHaveAttribute('data-pane', tool);
+      await expect(page.locator('.dock')).toBeHidden();
+      await expect(page.locator('.pane:visible')).toHaveCount(panel.length);
+      const panes = await page.locator('.pane:visible').evaluateAll((els) => els.map((el) => el.getAttribute('data-pane')));
+      expect(panes).toEqual([...panel]);
+      await expect(page.locator('.pane[data-pane="plate"]')).toContainText('Fondale');
+      await page.locator('.pane[data-pane="plate"] label', { hasText: 'Bianco' }).click();
+      await expect(page.locator('input[name="plate"][value="white"]')).toBeChecked();
       await expectNoScroll(page);
     }
 
-    await page.locator('[data-tool="size"]').click();
+    if (viewport.mobile) await page.locator('[data-tool="size"]').click();
     await page.locator('.size-chip[data-size="180"]').click();
     await expect(page.locator('input[name="heightMm"]')).toHaveValue('180');
     await page.locator('#open-request').click();
@@ -67,6 +85,13 @@ for (const viewport of [
       await page.locator('#sheet-close').click();
       await expect(page.locator('.pane:visible')).toHaveCount(0);
       await expect(page.locator('.sheet')).toBeHidden();
+      await expectNoScroll(page);
+    } else {
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.pane:visible')).toHaveCount(panel.length);
+      const panes = await page.locator('.pane:visible').evaluateAll((els) => els.map((el) => el.getAttribute('data-pane')));
+      expect(panes).toEqual([...panel]);
+      await expect(page.locator('.dock')).toBeHidden();
       await expectNoScroll(page);
     }
 

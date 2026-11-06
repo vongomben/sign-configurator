@@ -94,6 +94,10 @@ export type SizePreset = 'S' | 'M' | 'L' | 'XL';
 
 export type LightEffect = 'colore fisso' | 'arcobaleno';
 
+/** Materiale del fondale. Non cambia ancora la geometria: per ora è solo una scelta. */
+export const PLATE_MATERIALS = ['clear', 'white', 'black'] as const;
+export type PlateMaterial = (typeof PLATE_MATERIALS)[number];
+
 /** Scelte che non cambiano la geometria (SPEC §6). */
 export interface CustomerChoices {
   effect: LightEffect;
@@ -101,6 +105,7 @@ export interface CustomerChoices {
   mount: 'wall';
   plug: 'EU';
   proof: boolean;
+  plate: PlateMaterial;
 }
 
 export const DEFAULT_CUSTOMER: Readonly<CustomerChoices> = Object.freeze({
@@ -109,6 +114,7 @@ export const DEFAULT_CUSTOMER: Readonly<CustomerChoices> = Object.freeze({
   mount: 'wall',
   plug: 'EU',
   proof: true,
+  plate: 'clear',
 });
 
 /** Ordine v3. `sizePreset` è informativo: fa fede `heightMm`. */
@@ -205,7 +211,7 @@ function asV2(order: OrderV1 | SignOrder | SignOrderV3): SignOrder {
 /** v1 → v2 → v3. I campi del cliente mancanti prendono i default; la geometria non cambia. */
 export function migrateOrder(order: OrderV1 | SignOrder | SignOrderV3): SignOrderV3 {
   const geometry = asV2(order);
-  const customer = order.schemaVersion === 3 ? { ...order.customer } : { ...DEFAULT_CUSTOMER };
+  const customer = { ...DEFAULT_CUSTOMER, ...(order.schemaVersion === 3 ? order.customer : {}) };
   return {
     schemaVersion: 3,
     generatorVersion: geometry.generatorVersion,

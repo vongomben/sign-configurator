@@ -3,6 +3,7 @@
 import { GENERATOR_VERSION, type CuspMode, type EdgeProfile, type IDotMode, type Params } from '../config';
 import {
   DEFAULT_CUSTOMER,
+  PLATE_MATERIALS,
   migrateOrder,
   type CurveNode,
   type CustomerChoices,
@@ -329,6 +330,11 @@ function customerOf(value: unknown, warnings: string[]): CustomerChoices {
   if (value.proof !== undefined) {
     if (typeof value.proof === 'boolean') customer.proof = value.proof;
     else warnings.push('Bozza non valida: lasciata attiva.');
+  }
+  const plate = oneOf(value.plate, PLATE_MATERIALS);
+  if (value.plate !== undefined) {
+    if (plate) customer.plate = plate;
+    else warnings.push('Fondale sconosciuto: usato il trasparente.');
   }
   return customer;
 }

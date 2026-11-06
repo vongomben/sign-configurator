@@ -41,18 +41,16 @@ test('editor: trascina un nodo, una curva stretta blocca l\'invio, Ctrl+Z lo ria
   await expect(page.locator('#preview-status')).toContainText('LED');
   expect(scripts.join('\n').toLowerCase()).not.toContain('paper');
 
-  await page.locator('[data-tool="text"]').click();
   await page.locator('input[name="text"]').fill('c');
-  await page.locator('[data-tool="size"]').click();
   await page.locator('input[name="heightMm"]').fill('560');
   await page.locator('input[name="heightMm"]').dispatchEvent('change');
   await page.locator('#open-request').click();
   await expect(page.locator('#submit-order')).toBeEnabled();
+  await page.locator('#sheet-close').click();
 
   const canvas = page.locator('#path-editor');
   const status = page.locator('#preview-status');
   const beforeOpen = await status.getAttribute('data-generation');
-  await page.locator('[data-tool="more"]').click();
   await page.locator('#edit-paths').click();
   await expect(canvas).toHaveAttribute('data-open', 'true');
   await canvas.scrollIntoViewIfNeeded();
@@ -93,7 +91,7 @@ test('editor: trascina un nodo, una curva stretta blocca l\'invio, Ctrl+Z lo ria
   await page.locator('#open-request').click();
   await expect(page.locator('#submit-order')).toBeDisabled();
 
-  await page.locator('[data-tool="more"]').click();
+  await page.locator('#sheet-close').click();
   await canvas.focus();
   await page.keyboard.press('Control+z');
   await page.locator('#open-request').click();
