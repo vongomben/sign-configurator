@@ -1,13 +1,22 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
 import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
+import { PRICING_VERSION } from '../pricing';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
 import type { PathEditor } from '../editor/editor';
 import { FONTS } from '../fonts/registry';
-import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
-import type { TraceMode } from '../order/schema';
+import {
+  DEFAULT_CUSTOMER,
+  type LightEffect,
+  type OrderCrossing,
+  type OrderPath,
+  type OrderSource,
+  type SignOrderV4,
+  type SizePreset,
+  type TraceMode,
+} from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
@@ -15,15 +24,15 @@ import { plateSvgFileName, stlFileName } from './signSlug';
 import { plateToSvg } from '../export/plate';
 import {
   DEFAULT_PLATE,
-  PLATE_MARGIN_MAX,
-  PLATE_MARGIN_MIN,
   PLATE_MATERIALS,
   PLATE_SHAPES,
+  clampCornerR,
   clampMargin,
   type PlateChoice,
   type PlateMaterial,
   type PlateShape,
 } from '../geometry/plate';
+import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
 import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
@@ -193,17 +202,24 @@ app.innerHTML = `
           <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
         </div>
         <div class="pane" data-pane="plate" hidden>
-          <div class="choice plate-shape" role="radiogroup" aria-label="Fondale">
-            <label><input type="radio" name="plateShape" value="none" checked><span>Nessuno</span></label>
-            ${PLATE_SHAPES.map((shape) => `<label><input type="radio" name="plateShape" value="${shape.value}"><span>${shape.label}</span></label>`).join('')}
-          </div>
           <div class="choice plate-material" role="radiogroup" aria-label="Materiale del fondale">
-            ${(Object.keys(PLATE_MATERIALS) as PlateMaterial[]).map((id) => `<label><input type="radio" name="plateMaterial" value="${id}"${id === DEFAULT_PLATE.material ? ' checked' : ''}><span>${PLATE_MATERIALS[id].label} · ${PLATE_MATERIALS[id].thicknessMm} mm</span></label>`).join('')}
+            <label><input type="radio" name="plateMaterial" value="none" checked><span>Nessuno</span></label>
+            ${(Object.keys(PLATE_MATERIALS) as PlateMaterial[]).map((id) => `<label><input type="radio" name="plateMaterial" value="${id}"><span>${PLATE_MATERIALS[id].label} · ${PLATE_MATERIALS[id].thicknessMm} mm</span></label>`).join('')}
           </div>
-          <label class="tech-field plate-margin">
+          <div class="choice plate-shape plate-option" role="radiogroup" aria-label="Forma del fondale">
+            ${PLATE_SHAPES.map((shape) => `<label><input type="radio" name="plateShape" value="${shape.value}"${shape.value === DEFAULT_PLATE.shape ? ' checked' : ''}><span>${shape.label}</span></label>`).join('')}
+          </div>
+          <label class="tech-field plate-option">
             <span>Margine attorno all'insegna</span>
             <span class="tech-input">
-              <input name="plateMargin" type="number" inputmode="decimal" min="${PLATE_MARGIN_MIN}" max="${PLATE_MARGIN_MAX}" step="1" value="${DEFAULT_PLATE.marginMm}">
+              <input name="plateMarginMm" type="number" inputmode="decimal" min="${PLATE_MARGIN_MIN}" max="${PLATE_MARGIN_MAX}" step="1" value="${DEFAULT_PLATE.marginMm}">
+              <span>mm</span>
+            </span>
+          </label>
+          <label class="tech-field plate-option plate-corner">
+            <span>Raggio degli angoli</span>
+            <span class="tech-input">
+              <input name="plateCornerRMm" type="number" inputmode="decimal" min="${PLATE_CORNER_R_MIN}" max="${PLATE_CORNER_R_MAX}" step="1" value="${DEFAULT_PLATE.cornerRMm}">
               <span>mm</span>
             </span>
           </label>
@@ -300,6 +316,33 @@ function diffuserOn(): boolean {
   return document.querySelector<HTMLInputElement>('input[name="diffuser"][value="on"]')!.checked;
 }
 
+function effectOf(): LightEffect {
+  const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
+  return effect?.value === 'arcobaleno' ? 'arcobaleno' : 'colore fisso';
+}
+
+function sizePresetOf(heightMm: number): SizePreset | null {
+  return SIZES.find((size) => size.heightMm === heightMm)?.id ?? null;
+}
+
+function customerOrder(source: OrderSource): SignOrderV4 {
+  const heightMm = Number(heightInput.value);
+  return {
+    schemaVersion: ORDER_SCHEMA_VERSION,
+    generatorVersion: GENERATOR_VERSION,
+    pricingVersion: PRICING_VERSION,
+    source,
+    heightMm,
+    sizePreset: sizePresetOf(heightMm),
+    color: color.value,
+    params: orderParams(),
+    paths: edited?.paths ?? null,
+    crossings: edited?.crossings ?? [],
+    customer: { ...DEFAULT_CUSTOMER, effect: effectOf(), diffuser: diffuserOn() },
+    plate: plateChoice(),
+  };
+}
+
 function litOn(): boolean {
   return document.querySelector<HTMLInputElement>('input[name="mode"][value="accesa"]')!.checked;
 }
@@ -336,22 +379,30 @@ function orderParams(): Partial<Params> {
   return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value }) };
 }
 
-const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMargin"]')!;
+const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMarginMm"]')!;
+const plateCornerInput = document.querySelector<HTMLInputElement>('input[name="plateCornerRMm"]')!;
 const plateSize = document.querySelector<HTMLElement>('#plate-size')!;
 
 /** Fondale scelto (SPEC §13). `null`: nessun fondale. */
 function plateChoice(): PlateChoice | null {
-  const shape = document.querySelector<HTMLInputElement>('input[name="plateShape"]:checked')?.value ?? 'none';
-  if (shape === 'none') return null;
-  const material = (document.querySelector<HTMLInputElement>('input[name="plateMaterial"]:checked')?.value ?? DEFAULT_PLATE.material) as PlateMaterial;
-  return { shape: shape as PlateShape, material, marginMm: clampMargin(Number(plateMarginInput.value)) };
+  const material = document.querySelector<HTMLInputElement>('input[name="plateMaterial"]:checked')?.value ?? 'none';
+  if (!(material in PLATE_MATERIALS)) return null;
+  const shape = (document.querySelector<HTMLInputElement>('input[name="plateShape"]:checked')?.value ?? DEFAULT_PLATE.shape) as PlateShape;
+  return {
+    shape,
+    material: material as PlateMaterial,
+    marginMm: clampMargin(Number(plateMarginInput.value)),
+    cornerRMm: clampCornerR(Number(plateCornerInput.value)),
+  };
 }
 
 function syncPlateFields(): void {
-  const on = plateChoice() !== null;
-  for (const el of document.querySelectorAll<HTMLElement>('.plate-material, .plate-margin')) el.classList.toggle('is-dimmed', !on);
-  for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateMaterial"], input[name="plateMargin"]')) input.disabled = !on;
-  if (!on) plateSize.hidden = true;
+  const plate = plateChoice();
+  for (const el of document.querySelectorAll<HTMLElement>('.plate-option')) el.classList.toggle('is-dimmed', !plate);
+  for (const input of document.querySelectorAll<HTMLInputElement>('.plate-option input')) input.disabled = !plate;
+  // Il raggio vale solo per il rettangolo: la pillola ha metà del lato corto, il sagomato segue l'insegna.
+  document.querySelector<HTMLElement>('.plate-corner')!.hidden = plate !== null && plate.shape !== 'rect';
+  if (!plate) plateSize.hidden = true;
 }
 
 function cmLabel(mm: number): string {
@@ -753,7 +804,7 @@ async function showSign(): Promise<void> {
     status.textContent = 'Carica un file SVG, PNG o JPG.';
     return;
   }
-  let order: SignOrder;
+  let order: SignOrderV4;
   let notes: string[] = [];
   if (image && raster) {
     const built = rebuildRaster(raster.luminance, raster.width, raster.height, {
@@ -769,49 +820,19 @@ async function showSign(): Promise<void> {
     }
     paintThresholdPreview(thresholdPreview, built.binary);
     notes = raster.warnings;
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: built.source,
-      heightMm,
-      color: color.value,
-      params: orderParams(),
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-      plate: plateChoice(),
-    };
+    order = customerOrder(built.source);
   } else if (image && svgMarkup) {
     try {
       const imported = importSvg(svgMarkup, { heightMm, name: svgName, trace: traceMode() });
       notes = imported.warnings;
-      order = {
-        schemaVersion: ORDER_SCHEMA_VERSION,
-        generatorVersion: GENERATOR_VERSION,
-        source: imported.source,
-        heightMm,
-        color: color.value,
-        params: orderParams(),
-        paths: edited?.paths ?? null,
-        crossings: edited?.crossings ?? [],
-        plate: plateChoice(),
-      };
+      order = customerOrder(imported.source);
     } catch (err) {
       if (id !== request) return;
       status.textContent = err instanceof Error ? err.message : String(err);
       return;
     }
   } else {
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: { kind: 'text', text, fontId: fontInput.value },
-      heightMm,
-      color: color.value,
-      params: orderParams(),
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-      plate: plateChoice(),
-    };
+    order = customerOrder({ kind: 'text', text, fontId: fontInput.value });
   }
   status.textContent = 'Generazione…';
   const label = fileLabel();
@@ -1004,12 +1025,17 @@ for (const input of document.querySelectorAll<HTMLInputElement>('input[name="pla
     void showSign();
   });
 }
-plateMarginInput.addEventListener('input', () => {
-  invalidateStl();
-  schedule();
-});
+for (const input of [plateMarginInput, plateCornerInput]) {
+  input.addEventListener('input', () => {
+    invalidateStl();
+    schedule();
+  });
+}
 plateMarginInput.addEventListener('change', () => {
   plateMarginInput.value = String(clampMargin(Number(plateMarginInput.value)));
+});
+plateCornerInput.addEventListener('change', () => {
+  plateCornerInput.value = String(clampCornerR(Number(plateCornerInput.value)));
 });
 syncPlateFields();
 techReset.addEventListener('click', () => {

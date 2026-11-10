@@ -7,12 +7,13 @@ Se il codice e questo documento divergono, si aggiorna prima il documento.
 
 Web app 100% client-side (sito statico, nessun backend per la geometria):
 
-- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm) e colore; se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine e può scaricare gli STL dell'insegna. Cambiare lo spessore rigenera l'anteprima.
+- **Cliente**: scrive un testo e sceglie il font, oppure carica un'immagine (SVG, PNG, JPG, §4bis); sceglie altezza, spessore della cornice (`WALL`, da 1,6 a 5 mm), colore ed eventuale fondale (§13); se vuole ritocca i tracciati nell'editor (§5bis); vede un'anteprima 3D dell'insegna accesa, invia l'ordine e può scaricare gli STL dell'insegna. Cambiare lo spessore rigenera l'anteprima.
 - **Admin (Davide)**: dallo stesso JSON d'ordine rigenera in modo deterministico i file di produzione:
   1. `housing.stl` — cornice/canale da stampare in nero
   2. `diffuser.stl` — coperchio diffusore opzionale (bianco/naturale)
   3. `back.dxf` (+ `back.svg`) — fori sul retro per la CNC, visti dal retro
   4. `bom.json` — distinta: spezzoni di striscia, LED, fori, lunghezze
+  5. `plate.svg` (+ `plate.dxf`) — fondale da tagliare al laser, se scelto (§13)
 
 Unità: **millimetri** ovunque. Piano XY = piano dell'insegna, Z verso chi guarda. Il retro sta a Z = 0.
 
@@ -84,6 +85,8 @@ ricalcola `MIN_LETTER_H` da cerniera e passo.
 | `EDIT_MIN_NODE_DIST` | 0.5 | distanza minima fra due nodi consecutivi nell'editor |
 
 Altezza totale = `FLOOR + CHANNEL_DEPTH`.
+
+I parametri del fondale (`PLATE_*`) sono in §13.
 
 ### Profilo dei bordi (`src/geometry/edgeProfile.ts`)
 
@@ -253,19 +256,22 @@ testo + font + altezza, oppure immagine (§4bis)
         parete agli incroci e alle giunzioni); sarebbero pilastrini o punte di parete non stampabili
         e fessure scure nel diffusore. Il canale resta dentro il profilo esterno;
         ai CROSSING_GAP il canale resta continuo, solo la striscia si interrompe;
-        l'asola è gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata
+        l'asola è gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata;
+        con un fondale (§13): contorno della lastra e suoi fori, dallo stesso outline
  → [I] 3D (manifold-3d): estrusione profilo esterno (con smusso EDGE_PROFILE in cima) − canale
-        − fori (ancoraggio, cavo) − asole fili e tasche d'angolo, con smusso SLOT_LIP_CHAMFER (+ boss)
- → [J] export: STL binario, DXF/SVG, BOM JSON
+        − fori (ancoraggio, cavo) − asole fili e tasche d'angolo, con smusso SLOT_LIP_CHAMFER (+ boss);
+        con un fondale: estrusione della lastra di PLATE_T, fori compresi
+ → [J] export: STL binario, DXF/SVG, BOM JSON, plate.svg/plate.dxf
 ```
 
 Tutto ciò che va da [A] a [J] gira in un **Web Worker** (Comlink). L'interfaccia non si blocca mai.
 
 `generate(order)` esegue [A]–[I] nel worker e restituisce
-`{ housingMesh, diffuserMesh, holes, slots, pockets, outline, centerlines, lightPoints, ledGapMm, bom, warnings }`.
+`{ housingMesh, diffuserMesh, plateMesh, holes, slots, pockets, outline, plateOutline, plateHoles, centerlines, lightPoints, ledGapMm, bom, warnings }`.
 Le mesh sono i triangoli in mm, nello stesso riferimento dell'STL. `holes` sono gli ancoraggi (ciechi)
 e il cavo; `slots` e `pockets` i contorni reali di asole e tasche; `outline` il profilo esterno;
-`centerlines` le linee centrali degli spezzoni. `lightPoints` sono i LED sulla parte illuminata di
+`centerlines` le linee centrali degli spezzoni. `plateMesh`, `plateOutline` e `plateHoles` sono
+`null` senza fondale (§13). `lightPoints` sono i LED sulla parte illuminata di
 ogni linea centrale (`pos`, `dir` da DIN a DOUT, `segment`, `index`): oggi a `LED_PER_M` (160 al metro
 della striscia COB); un pixel a passo libero userà lo stesso elenco. `ledGapMm` è
 `CHANNEL_DEPTH − STRIP_T`, la distanza fra la faccia del LED e il diffusore.
@@ -279,6 +285,8 @@ La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `l
 
 - **Housing**: nero opaco, appena satinato. Il **diffusore** è una mesh a parte. Le normali sono a
   spigolo (`toCreasedNormals`, 35°): pareti curve morbide, facce piane piane, senza ventagli.
+- **Fondale** (§13): mesh a parte dietro l'housing, con il materiale scelto, lo spessore e i fori
+  reali; sul trasparente si vedono fori e fili dietro la lastra.
 - **Spenta**: diffusore bianco opaco, luce ambiente diurna, niente bloom.
 - **Accesa**: sul diffusore la luminosità è la somma di gaussiane centrate sui `lightPoints`.
   La sigma è `ledGapMm`, così se il passo è grande rispetto alla profondità i punti restano
@@ -300,7 +308,7 @@ La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `l
   è attivo nell'anteprima, anche `diffuser.stl`, dalle mesh già calcolate per la scena (niente
   seconda generazione). È disabilitato, con la scritta «Generazione…», finché `generate()` non ha
   restituito `housingMesh`; testo, font, altezza o diffusore lo disabilitano di nuovo e non si
-  scarica mai una mesh precedente. BOM, DXF e SVG restano solo in admin.
+  scarica mai una mesh precedente. BOM, DXF, SVG e file del fondale restano solo in admin.
 
 ### [A] Rasterizzazione (`src/geometry/rasterize.ts`)
 
@@ -474,6 +482,8 @@ la vista su quel punto.
 - **Tasca d'angolo**: quando due asole, l'uscita di uno spezzone e l'ingresso del successivo, si sovrappongono o distano meno di `CORNER_MERGE_DIST`, al loro posto c'è una sola tasca passante, intersezione con il canale (mai oltre), con lo smusso del labbro su entrambi i lati da cui entra la striscia.
 - **Cavo**: all'inizio del primo spezzone.
 
+I fori corrispondenti nel fondale sono descritti in §13.
+
 ### Verso degli spezzoni
 
 La striscia è indirizzabile (WS2812B): il segnale entra da **DIN** ed esce da **DOUT**.
@@ -496,6 +506,7 @@ Layer: `ANCHOR_HOLES` (CIRCLE), `WIRE_SLOTS` (LWPOLYLINE chiusa del contorno rea
   "corners": [{ "x": 0, "y": 0, "segments": [1, 2], "wireMm": 0 }],
   "assembly": { "segments": 0, "solderJoints": 0, "wires": 0, "corners": 0,
                 "wireM": 0, "totalLeds": 0, "maxCurrentA": 0, "supplyA": 0 },
+  "plate": null,
   "warnings": [] }
 ```
 
@@ -510,6 +521,7 @@ meno le due assorbite da ogni tasca. Uno spigolo diviso (`CUSP_MODE` `"split"`),
 (`"dash"`) o un puntino (`"dot"`) aggiunge uno spezzone. Il puntino `"dot"` non ha asole: ha due
 fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
 `corners` = giunti d'angolo: posizione del labbro comune, spezzoni collegati, filo 0 mm.
+`plate` = riepilogo del fondale (§13), `null` senza fondale.
 
 `assembly` è il riepilogo di montaggio, in cima alla tabella BOM nella pagina di debug:
 
@@ -637,12 +649,20 @@ freccia su ogni spezzone.
   sopra, `sizePreset` e `pricingVersion` `null`. Un ordine v1 o v2 migrato produce **gli stessi STL
   e la stessa BOM** (test come `orderSchema.test.ts`).
 - L'ordine **non contiene dati personali**: i contatti viaggiano solo nella richiesta (§12.7).
-- `plate` (facoltativo, anche in v2): il fondale laser di §13, `{ "shape": "rect" | "contour",
-  "material": "smoke" | "wood", "marginMm": 5–80 }`. Assente o `null`: nessun fondale. Sta fuori da
-  `customer` perché produce file di produzione. Non serve una nuova versione: chi non lo conosce lo
-  ignora, e un ordine senza `plate` produce gli stessi STL e la stessa BOM. La migrazione lo copia
-  solo se c'è; nel link condiviso un valore sconosciuto si ignora con un avviso e un margine fuori
-  limite si riporta al limite.
+
+### Fondale (`schemaVersion` 4)
+
+```json
+{ "schemaVersion": 4, "...": "come v3",
+  "plate": { "shape": "rect", "material": "clear", "marginMm": 20, "cornerRMm": 8 } }
+```
+
+- `plate` è `null` senza fondale. Il fondale genera un file di produzione (`plate.svg`), quindi
+  non sta in `customer`.
+- `shape`: `"rect"` | `"pill"` | `"contour"`; `material`: `"clear"` | `"black"` | `"wood"` (§13).
+  Spessore e kerf non sono nell'ordine: dipendono dal materiale e stanno in `src/config.ts`.
+- Migrazione v3 → v4: `plate: null`. Un ordine v1, v2 o v3 migrato produce gli stessi STL e la
+  BOM di prima più `"plate": null`.
 
 Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo, nessuna casualità).
 
@@ -651,6 +671,7 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
 - Vite + TypeScript (strict), nessun framework UI pesante (vanilla TS o Preact)
 - `opentype.js`, `manifold-3d` (WASM), `three` (+ `UnrealBloomPass`), `comlink`, `d3-delaunay` (fallback)
 - `paper` (Paper.js, build `paper-core`, senza PaperScript) per l'editor (§5bis), caricato con `import()` dinamico
+- Offset e unioni del fondale (§13) con `manifold-3d` `CrossSection`, come [H]: nessuna libreria in più
 - Export DXF scritto a mano (LWPOLYLINE, AC1015, come i layer in §5) o `dxf-writer`
 - Test: `vitest` sui moduli geometrici puri
 - Controllo di fine fase: `npm run check`. In sequenza esegue `tsc --noEmit`, `vitest run`,
@@ -682,13 +703,14 @@ src/
   config.ts
   fonts/registry.ts, loadFont.ts
   geometry/rasterize.ts, distance.ts, tubes.ts, skeleton.ts, graph.ts, tubePairing.ts, segment.ts, smooth.ts,
-           chain.ts, validate.ts, strip.ts, holes.ts, housing.ts, diffuser.ts, edgeProfile.ts, lights.ts
-  export/stl.ts, dxf.ts, svg.ts, bom.ts
+           chain.ts, validate.ts, strip.ts, holes.ts, housing.ts, diffuser.ts, edgeProfile.ts, lights.ts,
+           plate.ts                (§13: contorno, fori, mesh del fondale)
+  export/stl.ts, dxf.ts, svg.ts, bom.ts, plate.ts (§13: plate.svg, plate.dxf)
   worker/generator.worker.ts, api.ts
-  viewer/scene.ts, neonMaterial.ts
+  viewer/scene.ts, neonMaterial.ts, plateMaterials.ts (§13)
   sources/svgImport.ts (main thread), svgPaths.ts, rasterImport.ts (main thread), bitmapCodec.ts, contours.ts
   editor/editor.ts (Paper.js, UI), paths.ts (formato, scala, appiattimento: puro), crossings.ts, liveCheck.ts
-  order/schema.ts (tipi v3, migrazione v1 → v2 → v3)
+  order/schema.ts (tipi v4, migrazione v1 → v2 → v3 → v4)
   pricing.ts                      (§12.5, puro)
   order/share.ts                  (§12.6)
   ui/copy.it.ts, sizes.ts
@@ -714,28 +736,48 @@ di `config.ts`, da aggiornare dopo le misure sul campione stampato.
 
 Immagini caricate dal cliente: serve una dichiarazione che ne ha i diritti (casella prima dell'invio)?
 
+Fondale (§13): i passaggi dei fili usano `PLATE_WIRE_HOLES` (default `true`): fori passanti sotto le
+asole e sul cavo, visibili sul trasparente. `false` lascia la lastra chiusa in quei punti (fili
+nell'intercapedine fra housing e lastra). Resta da confermare sul campione. Fissaggio housing →
+lastra: viti M3 dal retro nei fori ciechi, inserti a caldo o distanziali? Spessori reali dei materiali
+acquistati e kerf misurato sul laser per ciascuno.
+
 Per la pagina cliente (§12), da decidere prima della pubblicazione: costanti di prezzo
-(`src/pricing.ts`), tempi di produzione e consegna, garanzia, costi e zone di spedizione, chi emette
-la fattura, indirizzo email delle richieste, servizio di invio del modulo senza client di posta, testo
-dell'informativa privacy. Il §12 si prova prima in `shop-test.html` (solo locale) e passa in
-`index.html` dopo l'approvazione di Davide.
+(`src/pricing.ts`, comprese quelle del fondale), tempi di produzione e consegna, garanzia, costi e
+zone di spedizione, chi emette la fattura, indirizzo email delle richieste, testo dell'informativa
+privacy. Per l'invio senza client di posta la direzione è l'integrazione WooCommerce (§11). La pagina
+cliente è `index.html`: si prova in locale e si pubblica con `npm run deploy` solo dopo
+l'approvazione di Davide.
 
 ## 11. Roadmap post-v1
 
 - **Trasformazioni per lettera** nell'editor (§5bis): sposta, ruota, scala, spaziatura, con la
   lettera come gruppo di spezzoni.
+- **Integrazione WordPress / WooCommerce** (sostituisce il `mailto:` di §12.7):
+  - [ ] Endpoint REST custom (mini-plugin WP) `neon/v1/richiesta`: crea un ordine WooCommerce
+        «In attesa di pagamento» con la configurazione come metadati di riga + link `#o=` (§12.6)
+  - [ ] Nessuna chiave API WooCommerce nel codice del configuratore (repo pubblico)
+  - [ ] CORS limitato al dominio del configuratore (o configuratore incorporato nel sito via shortcode)
+  - [ ] Anti-spam con Cloudflare Turnstile: widget nel configuratore, token verificato lato PHP
+        con secret key in `wp-config.php`; `turnstile.reset()` dopo ogni invio
+  - [ ] Honeypot + rate limit per IP come difese aggiuntive
+  - [ ] Checkbox / rimando privacy policy (raccolta nome/email, Turnstile come servizio terzo)
 
 ## 12. Pagina cliente: proposta di valore, flusso, prezzo
 
 Riferimento di mercato: i configuratori di insegne LED neon flex già in vendita (es. customneon.com).
-Se ne prende **la struttura** (passi numerati, prezzo immediato, barra di fiducia, preventivo su
-misura sempre raggiungibile, design condivisibile). **Non** se ne riprendono testi, immagini, nomi dei
-font, marchi o slogan.
+Se ne prende **la struttura** (l'insegna subito visibile, strumenti in un dock e un foglio alla volta,
+§12.2, prezzo immediato, barra di fiducia, preventivo su misura sempre raggiungibile, design
+condivisibile). **Non** se ne riprendono testi, immagini, nomi dei font, marchi o slogan.
+
+La pagina cliente è `index.html`. Si prova in locale con `npm run dev` e si pubblica con
+`npm run deploy` solo dopo l'approvazione di Davide.
 
 ### 12.1 Proposta di valore
 
 1. **Quello che vedi è quello che stampiamo.** L'anteprima è la geometria dell'STL (§5) con la luce
-   calcolata sui LED reali (`lightPoints`); i vincoli fisici si vedono prima dell'ordine.
+   calcolata sui LED reali (`lightPoints`); i vincoli fisici si vedono prima dell'ordine. Vale anche
+   per il fondale: materiale, spessore e fori nell'anteprima sono quelli tagliati (§13).
 2. **Il tuo disegno, non solo un font.** Testo, firma o logo (§4bis), ritoccabili nell'editor (§5bis).
 3. **Fatta qui, riparabile.** Stampata e assemblata in Italia; cornice, diffusore e strisce sono
    pezzi separabili e sostituibili.
@@ -815,12 +857,14 @@ Ogni sezione contiene un `.pane[data-pane=…]`; Richiedi è il `.pane[data-pane
 - **color.** Nove pallini, `input type="color" name="color"` e `radio name="effect"` fisso/arcobaleno.
   Il colore scelto aggiorna `--neon` e `--on-neon` (chiaro o scuro in base alla luminanza), usati da
   «Richiedi», dallo strumento attivo e dai pulsanti primari. **v1.1**: un colore per spezzone.
-- **plate** («Fondale», §13). Forma: Nessuno / Rettangolare / Sagomato attorno ai LED
-  (`radio name="plateShape"`: `none`, `rect`, `contour`). Materiale: Plexi nero trasparente o Legno,
-  con lo spessore (`radio name="plateMaterial"`). Margine attorno all'insegna, 5–80 mm
-  (`input name="plateMargin"`). Con «Nessuno» materiale e margine sono attenuati e disattivati.
-  Dopo la generazione `#plate-size` mostra le misure della lastra e il numero di fori. Il fondale
-  compare nel riepilogo di Richiedi.
+- **plate** («Fondale», §13). Materiale: Nessuno / Plexi trasparente / Plexi nero trasparente /
+  Legno, con lo spessore (`radio name="plateMaterial"`: `none`, `clear`, `black`, `wood`). Con un
+  materiale: forma Rettangolare / Pillola / Sagomato attorno ai LED (`radio name="plateShape"`:
+  `rect`, `pill`, `contour`), margine attorno all'insegna 10–60 mm (`input name="plateMarginMm"`) e,
+  per il rettangolo, raggio degli angoli 0–50 mm (`input name="plateCornerRMm"`). Con «Nessuno» gli
+  altri campi sono attenuati e disattivati. Dopo la generazione `#plate-size` mostra le misure della
+  lastra e il numero di fori. Il fondale compare nel riepilogo di Richiedi e nell'ordine (`plate`,
+  §6). Ha la sua voce nella barra degli strumenti, come gli altri: con la barra verticale c'è posto.
 - **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
   sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
   testo» (`#back-to-text`), come in §4bis.
@@ -843,20 +887,23 @@ Ogni sezione contiene un `.pane[data-pane=…]`; Richiedi è il `.pane[data-pane
 - **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
   §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
   e cornice stanno sulla barra dell'anteprima, non in questo foglio.
-- **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML.
+- **request** (da «Richiedi»). Riepilogo `<dl id="summary">`: il testo del cliente è testo, non HTML;
+  include il fondale (nessuno, oppure materiale, forma e margine).
   `#blocked-reason` è visibile quando l'invio è bloccato. `#submit-order` «Invia richiesta»,
   `#download-stl`. **v1.1**: prezzo, alimentatore, fissaggio, bozza di approvazione e modulo (12.7).
 
 Ogni cambio aggiorna il 3D quando è pronto (§5). Le scelte restano cambiando strumento. **v1.1**, oltre
 a quanto segnato sopra: prezzo indicativo, sfondi e quote dell'anteprima (12.3), bordo dritto/smussato,
-preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3, oltre a quelli dello strumento Tecnica, restano solo in admin.
+preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3 (oltre a quelli dello
+strumento Tecnica) e di §13 restano solo in admin.
 
 ### 12.3 Anteprima ambientata
 
 - Sfondi selezionabili (muro chiaro, muro scuro, mattoni, legno, neutro di §5): texture nostre in
   `public/backgrounds/`, ≤ 300 kB, con versione mobile. Nella pagina di prova vanno bene pattern
   generati.
-- Quote in cm attivabili; riferimento di scala opzionale (sagoma neutra di una presa o di una porta).
+- Quote in cm attivabili, che con un fondale includono la lastra; riferimento di scala opzionale
+  (sagoma neutra di una presa o di una porta).
 - Interruttore accesa/spenta (§5).
 
 ### 12.4 Vincoli comprensibili
@@ -868,6 +915,7 @@ Gli avvisi di §5, §4bis e §5bis sono per l'admin. Il cliente vede solo questi
 |---|---|---|
 | altezza minima (curve, fusioni) | «A questa misura le curve sono troppo strette: da X cm in su» + «porta a X cm» | sì |
 | errori dell'editor (§5bis: curve sotto R_MIN, fusioni, spezzoni corti) | marcatore sul tracciato + «correggi o annulla» | sì |
+| fondale oltre il piano del laser (§13) | «Il fondale è più grande del massimo che tagliamo: riduci misura o margine» | sì |
 | carattere senza glifo | «Questo font non ha il carattere "ñ"» | no |
 | immagine a bassa risoluzione | «Immagine poco definita per questa misura: fino a X cm, o caricane una più grande» | no |
 | tratto non uniforme | «Prova la modalità Contorno» + pulsante | no |
@@ -886,28 +934,31 @@ uguale con o senza `paths`.
 volumeMm3   = area(outline) · (FLOOR + CHANNEL_DEPTH) − area(canale) · CHANNEL_DEPTH
 grammi      = volumeMm3 / 1000 · PLA_DENSITY · INFILL_FACTOR      (+ diffusore se scelto)
 striscia    = Σ cutLengthMm / 1000                                 (m)
+fondale     = area(plateOutline) / 1e6 · EUR_PER_M2[material]
+            + perimetro(tagli del fondale) / 1000 · EUR_PER_M_LASER  (0 senza fondale)
 prezzo      = BASE
             + striscia · EUR_PER_M_STRIP
             + grammi   · EUR_PER_G_PRINT
             + assembly.segments     · EUR_PER_SEGMENT
             + assembly.solderJoints · EUR_PER_JOINT
             + alimentatore(supplyA)                                 (tabella a scaglioni)
+            + fondale
             + opzioni
 prezzoCliente = max(PRICE_MIN, arrotonda_su(prezzo · MARGIN, 5 €))
 ```
 
 `priceOrder` riceve la scelta del diffusore e le misure del 2D (aree, somma dei `cutLengthMm`,
-`assembly`, `supplyA`, spessori): non aspetta le mesh. Il volume del diffusore, se `customer.diffuser` è
-vero, è `area(outline) · DIFFUSER_T` (pezzo pieno, senza `INFILL_FACTOR`). `supplyA` 0 non
-aggiunge l'alimentatore; altrimenti vale il primo scaglione con `maxA` ≥ `supplyA`. Effetto e
-bozza restano a 0: gli effetti sono di serie (§12.1). `arrotonda_su` è l'eccesso al multiplo
-di 5 €. Un volume negativo si tratta come 0.
+`assembly`, `supplyA`, spessori, area e perimetro dei tagli del fondale): non aspetta le mesh. Il
+volume del diffusore, se `customer.diffuser` è vero, è `area(outline) · DIFFUSER_T` (pezzo pieno,
+senza `INFILL_FACTOR`). `supplyA` 0 non aggiunge l'alimentatore; altrimenti vale il primo scaglione
+con `maxA` ≥ `supplyA`. Effetto e bozza restano a 0: gli effetti sono di serie (§12.1).
+`arrotonda_su` è l'eccesso al multiplo di 5 €. Un volume negativo si tratta come 0.
 
 - Costanti con `PRICING_VERSION` (es. `"2026-11"`), valori **segnaposto** finché non fissati (§10).
 - Prezzo **indicativo**, IVA inclusa, spedizione a parte, confermato con la bozza.
 - Ogni taglia dello strumento Misura mostrerà il proprio prezzo (v1.1): il worker calcola il 2D delle
   altre altezze in sequenza, dopo quella selezionata. La pagina cliente non mostra ancora il prezzo.
-- In admin e in `shop-test.html`: scomposizione voce per voce.
+- In admin: scomposizione voce per voce.
 - Stesso ordine + stessa `PRICING_VERSION` → stesso prezzo (test).
 
 ### 12.6 Condivisione
@@ -919,10 +970,11 @@ di 5 €. Un volume negativo si tratta come 0.
 - Il link e il file contengono solo l'ordine (§6), mai contatti.
 - All'apertura: migrazione (§6), campi sconosciuti ignorati (anche i contatti), valori fuori limite
   riportati al limite con avviso, mai un'eccezione. Limiti: altezza 40–800 mm, `WALL` 1,6–5 mm (§1),
-  soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`).
-  `effect`, `mount`, `plug`, `trace` o `sizePreset` sconosciuti tornano al default. `generatorVersion`
-  diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono la lunghezza UTF-8 di `#o=` più
-  il base64url, senza padding.
+  soglia bitmap 0–255 (§4bis), colore `#rrggbb` altrimenti il default dell'esempio (`#ff2fd6`),
+  `plate.marginMm` e `plate.cornerRMm` nei limiti di §13. `effect`, `mount`, `plug`, `trace` o
+  `sizePreset` sconosciuti tornano al default; `plate.shape` o `plate.material` sconosciuti danno
+  `plate: null`. `generatorVersion` diversa da quella corrente → avviso, senza blocco. Gli 8 kB sono
+  la lunghezza UTF-8 di `#o=` più il base64url, senza padding.
 
 ### 12.7 Richiesta
 
@@ -933,7 +985,7 @@ Nessun pagamento (§9): il foglio Richiedi invia una **richiesta**.
 - Invio v1: `mailto:` con oggetto «Richiesta insegna — <testo o nome file>», riepilogo, prezzo
   indicativo, `PRICING_VERSION` e il link 12.6 (o l'invito ad allegare il `.json`).
 - Pagina di conferma con «cosa succede adesso»; tempi da `copy.it.ts`.
-- L'invio senza client di posta (form esterno o funzione serverless) è una domanda aperta (§10).
+- L'invio senza client di posta passa all'integrazione WooCommerce (§11).
 
 ### 12.8 Preventivo su misura
 
@@ -947,91 +999,119 @@ Non stanno sotto il configuratore (12.2: una schermata): si aprono dal pulsante 
 sovrapposto, chiudibile con Esc o con «Torna all'insegna», senza perdere lo stato. In quest'ordine:
 
 1. **Come funziona**: crea, ricevi la bozza, ricevi l'insegna.
-2. **Cosa c'è nella scatola**: esploso cornice / striscia / diffusore / alimentatore / fissaggi,
-   generato dalla scena three.js.
+2. **Cosa c'è nella scatola**: esploso cornice / striscia / diffusore / fondale / alimentatore /
+   fissaggi, generato dalla scena three.js.
 3. **Prima e dopo**: slider anteprima / foto reale, solo con foto nostre (`public/gallery/`).
 4. **FAQ**: sicurezza (5 V, niente vetro, niente calore), consumi, montaggio, pulizia, effetti,
    garanzia, tempi e spedizione, immagini e diritti, modifiche dopo l'ordine.
 
 ### 12.9bis Scaricare l'STL
 
-La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. Con un
-fondale (§13) scarica anche `<nome>-<altezza>mm-fondale.stl` (la lastra, nella stessa posizione
-dell'housing) e `<nome>-<altezza>mm-fondale.svg` (il file di taglio laser). BOM, DXF e SVG
-dell'housing restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL (test)» fa lo stesso
-export, per chi sta provando il flusso del §12.
+La pagina cliente (`index.html`) scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`.
+Con un fondale (§13) scarica anche `<nome>-<altezza>mm-fondale.stl` (la lastra, nella stessa
+posizione dell'housing) e `<nome>-<altezza>mm-fondale.svg` (il file di taglio laser). BOM, DXF e SVG
+dell'housing restano in admin.
 
 ### 12.10 Test
 
-- Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1 e v2
-  migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
-  → niente link, scaricamento `.json`.
+- Unit: prezzo deterministico e monotono in altezza; ordine → hash → ordine identico; v1, v2 e v3
+  migrati a v4 con gli stessi STL e la BOM di prima più `"plate": null`; hash malformato → avviso,
+  nessuna eccezione; ordine oltre 8 kB → niente link, scaricamento `.json`.
 - Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
   (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; su desktop tutte
   le sezioni sono aperte e visibili; ogni strumento della barra apre la sua sezione e la porta in
-  vista, anche dopo che è stata chiusa; Richiedi mostra un solo `.pane`; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
-  mobile «Fatto» chiude il foglio. **v1.1**: prezzo, taglia sotto il minimo disattivata con motivo,
-  link che ricostruisce testo, font e altezza, «Info» che si apre e si chiude con Esc. Paper.js non
-  si scarica finché l'editor non si apre.
+  vista, anche dopo che è stata chiusa; Richiedi mostra un solo `.pane`; la taglia L porta
+  `heightMm` a 180 e il riepilogo mostra «18 cm»; su mobile «Fatto» chiude il foglio; con un fondale
+  il download dà quattro file. **v1.1**: prezzo (anche del fondale), taglia sotto il minimo
+  disattivata con motivo, link che ricostruisce testo, font, altezza e fondale, «Info» che si apre e
+  si chiude con Esc. Paper.js non si scarica finché l'editor non si apre.
 
 ## 13. Fondale (lastra laser)
 
-Il fondale è facoltativo: una lastra dietro l'insegna, da tagliare al laser. Anteprima, STL e SVG di
-taglio vengono dagli stessi poligoni in mm (`src/geometry/plate.ts`, `buildPlate`): nessuna
-geometria solo visiva. `generate` restituisce `plate` (contorno, fori, misure, scelta) e `plateMesh`;
-senza fondale sono `null`.
+Il fondale è opzionale e visibile nell'anteprima con materiale, spessore e fori reali.
+Anteprima ed export derivano dagli stessi poligoni (mm), in `src/geometry/plate.ts` (`buildPlate`):
+nessuna geometria solo-visiva. `generate` restituisce `plate` (contorno, fori, misure, scelta) e
+`plateMesh`; senza fondale sono `null`.
+
+### Parametri (`src/config.ts`)
+
+| Parametro | Default | Significato |
+|---|---|---|
+| `PLATE_MARGIN` | 20 | margine fra outline dell'insegna e bordo della lastra (cliente: 10–60 mm) |
+| `PLATE_CORNER_R` | 8 | raggio degli angoli per `rect` (0–50 mm) |
+| `PLATE_MAX_W` / `_H` | `null` | piano utile del laser. `null` non blocca; con un numero, oltre è vincolo bloccante (§12.4) |
+| `PLATE_FIX_HOLE_D` | 3.4 | fori di fissaggio allineati agli ancoraggi (dipende dal fissaggio, §10) |
+| `PLATE_MOUNT_HOLE_D` | 5.0 | fori di montaggio a parete |
+| `PLATE_MOUNT_INSET` | 10 | distanza dei fori di montaggio dal bordo |
+| `PLATE_MOUNT_CLEARANCE` | 3 | aria minima fra un foro di montaggio e la sagoma dell'insegna |
+| `PLATE_WIRE_HOLES` | true | fori passanti per asole e cavo («Passaggi dei fili») |
+| `PLATE_WIRE_HOLE_D` | 6 | diametro dei passaggi dei fili sotto asole e tasche d'angolo |
+| `PLATE_T` | 3 / 3 / 4 | spessore per materiale (`clear` / `black` / `wood`) |
+| `PLATE_KERF` | `null` | kerf per materiale; `null` (DA TARARE) vale 0 |
 
 ### Forme (`manifold-3d` CrossSection, giunzioni arrotondate)
 
 - `rect` «Rettangolare»: il rettangolo che contiene la sagoma dell'housing più il margine, angoli
-  raggiati di `PLATE_PARAMS.CORNER_R` (8 mm).
+  raggiati di `cornerRMm` (dall'ordine; di default `PLATE_CORNER_R`).
+- `pill` «Pillola»: come `rect` con raggio = metà del lato corto.
 - `contour` «Sagomato attorno ai LED»: offset della sagoma del margine; i buchi interni (l'occhiello
   della «o») si riempiono. Se le lettere restano in più pezzi, una chiusura morfologica (offset in
   più e poi in meno, raggi 10–160 mm) le unisce; se non basta, si usa l'inviluppo convesso con un
   avviso.
 
-### Materiali
+### Materiali (scelti dal cliente)
 
-| id | Etichetta | Spessore | Anteprima |
+| id | Etichetta | `PLATE_T` | Anteprima |
 |---|---|---|---|
-| `smoke` | Plexi nero trasparente | 3 mm | grigio fumé lucido semitrasparente, che sul grigio dell'anteprima si legge come nero |
-| `wood` | Legno | 4 mm | marrone opaco |
+| `clear` | Plexi trasparente | 3 | acrilico chiaro e lucido, molto trasparente: si vedono fori e fili dietro |
+| `black` | Plexi nero trasparente | 3 | grigio fumé lucido semitrasparente, che sul grigio dell'anteprima si legge come nero |
+| `wood` | Legno | 4 | marrone opaco |
 
-Gli spessori sono segnaposto finché non si misurano i materiali acquistati (§10). La lastra sta fra
-Z = −spessore e Z = 0, cioè subito dietro il retro dell'housing: l'STL della lastra e quello
-dell'housing si allineano senza spostamenti. L'inquadratura dell'anteprima comprende la lastra.
-La lastra si disegna con normali per faccia (facce piane, nessuna sfumatura dei triangoli).
-La lastra sta davanti al muro e ne coprirebbe il bagliore del neon: lo riceve lei, dalla stessa
-texture del muro (`emissiveMap`, con le coordinate del piano XY), più intenso sul legno opaco e
-smorzato sul plexi lucido. Con un fondale la luce della stanza nelle viste accese è tre volte quella
-senza fondale, altrimenti la lastra sparirebbe nel nero.
+Spessori segnaposto: vanno sostituiti con quelli dei materiali acquistati (§10). I materiali stanno
+in `src/viewer/scene.ts` (`MeshStandardMaterial`). La lastra sta fra Z = −spessore e Z = 0, cioè
+subito dietro il retro dell'housing: l'STL della lastra e quello dell'housing si allineano senza
+spostamenti. L'inquadratura dell'anteprima comprende la lastra. La lastra sta davanti al muro e ne
+coprirebbe il bagliore del neon: lo riceve lei, dalla stessa texture del muro (`emissiveMap`, con le
+coordinate del piano XY), più intenso sul legno opaco e smorzato sul plexi lucido. Con un fondale la
+luce della stanza nelle viste accese è tre volte quella senza fondale, altrimenti la lastra
+sparirebbe nel nero.
 
 ### Fori
 
-Tutti passanti, in `PLATE_PARAMS` (`src/config.ts`):
+Tutti passanti:
 
-- fissaggio sotto ogni ancoraggio dell'housing, Ø `FIX_HOLE_D` 3,4;
+- fissaggio sotto ogni ancoraggio dell'housing, Ø `PLATE_FIX_HOLE_D`;
 - cavo principale, Ø `CABLE_HOLE_D`;
-- passaggio dei fili sotto ogni asola e tasca d'angolo, Ø `WIRE_HOLE_D` 6, e sotto le piazzole
-  dei puntini (Ø `DOT_WIRE_HOLE_D`): i fili fra gli spezzoni passano dietro la lastra (sul plexi si
-  vedono; resta una domanda aperta, §10);
-- solo per `rect`: quattro fori di montaggio a parete negli angoli, Ø `MOUNT_HOLE_D` 5 a
-  `MOUNT_INSET` 10 mm dal bordo. Un foro che finirebbe a meno di `MOUNT_CLEARANCE` 3 mm dalla
+- passaggi dei fili (sotto);
+- solo per `rect` e `pill`: quattro fori di montaggio a parete negli angoli, Ø `PLATE_MOUNT_HOLE_D`
+  a `PLATE_MOUNT_INSET` dal bordo. Un foro che finirebbe a meno di `PLATE_MOUNT_CLEARANCE` dalla
   sagoma dell'insegna si toglie, con un avviso che suggerisce di aumentare il margine.
 
-Kerf per materiale (`PLATE_PARAMS.KERF`, oggi 0, DA TARARE sul laser): il contorno si allarga di
-kerf/2 e i fori si restringono di kerf/2, così le misure finali sono quelle nominali.
+Compensazione `PLATE_KERF`: il contorno si allarga di kerf/2 e i fori si restringono di kerf/2, così
+le misure finali sono quelle nominali.
+
+### Passaggi dei fili
+
+I fili che escono dall'insegna attraversano il fondale se `PLATE_WIRE_HOLES` è vero (default `true`):
+un foro Ø `PLATE_WIRE_HOLE_D` sotto ogni asola e tasca d'angolo e uno sotto ogni piazzola dei
+puntini (Ø `DOT_WIRE_HOLE_D`). `false` lascia il fondale chiuso in quei punti (resta il foro del
+cavo). Non cambia cornice né diffusore. Resta una domanda aperta (§10) finché non si misura sul
+campione.
 
 ### Export
 
 `fondale.svg` (`src/export/plate.ts`), in mm (`width`/`height` in mm, `viewBox` in mm), **visto dal
 retro come `back.dxf`**, così i due file si sovrappongono. Blu (`#0000ff`) = fori, da tagliare per
 primi; rosso (`#ff0000`) = contorno, per ultimo. Materiale, spessore e misure stanno in `<title>` e
-`<desc>`. `fondale.stl` è la lastra in 3D, per l'assemblaggio e per chi la stampa.
+`<desc>`. `fondale.stl` è la lastra in 3D, per l'assemblaggio. **Da fare**: `plate.dxf` e il testo
+«RETRO» su un layer di incisione (verde); l'incisione va messa dove c'è sempre lastra.
+Nella BOM `plate` = `{ shape, material, widthMm, heightMm, areaMm2, cutLengthMm, thicknessMm,
+fixHoles, mountHoles, wireHoles }`, `null` senza fondale.
 
 ### Test
 
-`test/plate.test.ts`: misure del rettangolo e spessore; un buco nella lastra per ogni foro; sagomato
-in un pezzo solo e più piccolo del rettangolo; fori di montaggio tolti con margine stretto; SVG in
-mm specchiato; il generatore produce il fondale solo se l'ordine lo chiede; il fondale passa per il
-link condiviso. Smoke: con il fondale il download dà quattro file, STL e SVG compresi.
+`test/plate.test.ts`: misure del rettangolo e spessore; un buco nella lastra per ogni foro; pillola
+con raggio pari a metà del lato corto; sagomato in un pezzo solo e più piccolo del rettangolo; fori
+di montaggio tolti con margine stretto; niente passaggi dei fili con `PLATE_WIRE_HOLES` falso; SVG in
+mm specchiato; BOM del fondale; il generatore produce il fondale solo se l'ordine lo chiede; il
+fondale passa per il link condiviso. Smoke: con il fondale il download dà quattro file.

@@ -3,7 +3,7 @@
 import { GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
 import type { EditSegment } from '../editor/paths';
 import type { PathEditor } from '../editor/editor';
-import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
+import { DEFAULT_CUSTOMER, type OrderCrossing, type OrderPath, type SignOrderV4 } from '../order/schema';
 import { DEFAULT_EXPOSURE, DEFAULT_HALO } from '../viewer/neonMaterial';
 import { mountSignScene } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
@@ -46,12 +46,16 @@ halo.addEventListener('input', () => scene.setHalo(Number(halo.value)));
 
 const generator = createGenerator();
 const baseOrder = {
-  schemaVersion: ORDER_SCHEMA_VERSION as 2,
+  schemaVersion: ORDER_SCHEMA_VERSION,
   generatorVersion: GENERATOR_VERSION,
+  pricingVersion: null,
   source: { kind: 'text' as const, text: 'Ciao', fontId: 'sacramento' },
   heightMm: 120,
+  sizePreset: 'M' as const,
   color: '#ff2fd6',
   params: {},
+  customer: { ...DEFAULT_CUSTOMER },
+  plate: null,
 };
 
 let edited: { paths: OrderPath[]; crossings: OrderCrossing[] } | null = null;
@@ -75,7 +79,7 @@ function updateSubmit(): void {
   submitButton.disabled = liveBlocked || workerBlocked;
 }
 
-function orderOf(): SignOrder {
+function orderOf(): SignOrderV4 {
   return {
     ...baseOrder,
     paths: edited?.paths ?? null,

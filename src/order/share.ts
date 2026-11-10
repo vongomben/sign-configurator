@@ -1,7 +1,18 @@
 // Link e file dell'ordine (SPEC §12.6). Mai un'eccezione: un hash rotto diventa un avviso.
 
-import { plateChoiceOf } from '../geometry/plate';
-import { GENERATOR_VERSION, type CuspMode, type EdgeProfile, type IDotMode, type Params } from '../config';
+import {
+  GENERATOR_VERSION,
+  PLATE_CORNER_R,
+  PLATE_CORNER_R_MAX,
+  PLATE_CORNER_R_MIN,
+  PLATE_MARGIN,
+  PLATE_MARGIN_MAX,
+  PLATE_MARGIN_MIN,
+  type CuspMode,
+  type EdgeProfile,
+  type IDotMode,
+  type Params,
+} from '../config';
 import {
   DEFAULT_CUSTOMER,
   migrateOrder,
@@ -12,8 +23,12 @@ import {
   type OrderPath,
   type OrderSource,
   type OrderV1,
+  type PlateChoice,
+  type PlateMaterial,
+  type PlateShape,
   type SignOrder,
   type SignOrderV3,
+  type SignOrderV4,
   type SizePreset,
   type SvgFillElement,
   type SvgStrokeElement,
@@ -37,7 +52,7 @@ export interface ShareLink {
 }
 
 export interface ShareRead {
-  order: SignOrderV3 | null;
+  order: SignOrderV4 | null;
   warnings: string[];
 }
 
@@ -335,6 +350,43 @@ function customerOf(value: unknown, warnings: string[]): CustomerChoices {
   return customer;
 }
 
+function clampMm(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function plateOf(value: unknown, warnings: string[]): PlateChoice | null {
+  if (value == null) return null;
+  if (!isRecord(value)) {
+    warnings.push('Fondale ignorato.');
+    return null;
+  }
+  const shape = oneOf(value.shape, ['rect', 'pill', 'contour'] as const satisfies readonly PlateShape[]);
+  const material = oneOf(value.material, ['clear', 'black', 'wood'] as const satisfies readonly PlateMaterial[]);
+  if (!shape || !material) {
+    warnings.push('Fondale sconosciuto: nessun fondale.');
+    return null;
+  }
+  let marginMm = finite(value.marginMm);
+  if (marginMm === null) {
+    marginMm = PLATE_MARGIN;
+    warnings.push(`Margine del fondale mancante: usato ${PLATE_MARGIN} mm.`);
+  } else {
+    const next = clampMm(marginMm, PLATE_MARGIN_MIN, PLATE_MARGIN_MAX);
+    if (next !== marginMm) warnings.push(`Margine del fondale ${marginMm} mm fuori limite: riportato a ${next} mm.`);
+    marginMm = next;
+  }
+  let cornerRMm = finite(value.cornerRMm);
+  if (cornerRMm === null) {
+    cornerRMm = PLATE_CORNER_R;
+    warnings.push(`Raggio degli angoli mancante: usato ${PLATE_CORNER_R} mm.`);
+  } else {
+    const next = clampMm(cornerRMm, PLATE_CORNER_R_MIN, PLATE_CORNER_R_MAX);
+    if (next !== cornerRMm) warnings.push(`Raggio degli angoli ${cornerRMm} mm fuori limite: riportato a ${next} mm.`);
+    cornerRMm = next;
+  }
+  return { shape, material, marginMm, cornerRMm };
+}
+
 function sizeOf(value: unknown, warnings: string[]): SizePreset | null {
   if (value == null) return null;
   const preset = oneOf(value, ['S', 'M', 'L', 'XL'] as const satisfies readonly SizePreset[]);
@@ -366,7 +418,7 @@ function heightOf(value: unknown, warnings: string[]): number | null {
   return height;
 }
 
-function orderFromRecord(record: Record<string, unknown>, warnings: string[]): SignOrderV3 | null {
+function orderFromRecord(record: Record<string, unknown>, warnings: string[]): SignOrderV4 | null {
   const extra = Object.keys(record).filter((key) => !KNOWN_ROOT.has(key));
   if (extra.length > 0) warnings.push(`Campi ignorati: ${extra.join(', ')}.`);
   const version = finite(record.schemaVersion);
@@ -400,39 +452,42 @@ function orderFromRecord(record: Record<string, unknown>, warnings: string[]): S
       params,
       paths: pathsOf(record.paths, warnings),
       crossings: crossingsOf(record.crossings, warnings),
-      plate: plateChoiceOf(record.plate, warnings),
     };
     return migrateOrder(v2);
   }
+  const pricingVersion = typeof record.pricingVersion === 'string' ? record.pricingVersion : null;
+  const shared = {
+    generatorVersion,
+    pricingVersion,
+    source,
+    heightMm,
+    sizePreset: sizeOf(record.sizePreset, warnings),
+    color,
+    params,
+    paths: pathsOf(record.paths, warnings),
+    crossings: crossingsOf(record.crossings, warnings),
+    customer: customerOf(record.customer, warnings),
+  };
   if (version === 3) {
-    const pricingVersion = typeof record.pricingVersion === 'string' ? record.pricingVersion : null;
-    return migrateOrder({
-      schemaVersion: 3,
-      generatorVersion,
-      pricingVersion,
-      source,
-      heightMm,
-      sizePreset: sizeOf(record.sizePreset, warnings),
-      color,
-      params,
-      paths: pathsOf(record.paths, warnings),
-      crossings: crossingsOf(record.crossings, warnings),
-      customer: customerOf(record.customer, warnings),
-      plate: plateChoiceOf(record.plate, warnings),
-    });
+    const v3: SignOrderV3 = { schemaVersion: 3, ...shared };
+    return migrateOrder(v3);
+  }
+  if (version === 4) {
+    const v4: SignOrderV4 = { schemaVersion: 4, ...shared, plate: plateOf(record.plate, warnings) };
+    return migrateOrder(v4);
   }
   warnings.push('Versione dell\'ordine non riconosciuta.');
   return null;
 }
 
-function noteGenerator(order: SignOrderV3, warnings: string[]): void {
+function noteGenerator(order: SignOrderV4, warnings: string[]): void {
   if (order.generatorVersion !== GENERATOR_VERSION) {
     warnings.push(`Versione del generatore ${order.generatorVersion || 'mancante'}: il risultato può cambiare.`);
   }
 }
 
 /** JSON normalizzato e, se ci sta in 8 kB, il frammento `#o=`. */
-export function encodeShare(order: SignOrderV3): ShareLink {
+export function encodeShare(order: SignOrderV4): ShareLink {
   try {
     const json = JSON.stringify(migrateOrder(order));
     const hash = `#o=${toBase64Url(new TextEncoder().encode(json))}`;

@@ -165,7 +165,19 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
   const diffuserOff = new MeshStandardMaterial({ color: 0xf7f4ef, roughness: 0.94, metalness: 0, side: DoubleSide });
   // Fondale: plexi nero trasparente (fumé lucido, si vede il muro dietro) o legno opaco.
   const plateMaterials: Record<PlateMaterial, MeshStandardMaterial> = {
-    smoke: new MeshStandardMaterial({
+    // Plexi trasparente: quasi invisibile, lucido; si vedono fori e fili dietro.
+    clear: new MeshStandardMaterial({
+      color: 0xc8d4de,
+      roughness: 0.04,
+      metalness: 0.25,
+      transparent: true,
+      opacity: 0.1,
+      depthWrite: false,
+      side: DoubleSide,
+      emissive: 0xffffff,
+    }),
+    // Plexi nero trasparente (fumé).
+    black: new MeshStandardMaterial({
       // Sullo sfondo nero del cliente un nero pieno sparirebbe: un grigio fumé lucido lo stacca.
       color: 0x3a3a48,
       roughness: 0.16,
@@ -317,7 +329,8 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
     wallMaterial.uniforms.uGain!.value = on ? WALL_GLOW_GAIN * spread : 0;
     const plateGlow = on ? WALL_GLOW_GAIN * spread : 0;
     plateMaterials.wood.emissiveIntensity = plateGlow * 0.9;
-    plateMaterials.smoke.emissiveIntensity = plateGlow * 0.85;
+    plateMaterials.black.emissiveIntensity = plateGlow * 0.85;
+    plateMaterials.clear.emissiveIntensity = plateGlow * 0.5;
     bloom.enabled = on || open;
   };
 
@@ -502,7 +515,8 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
       splat.geometry.dispose();
       housingMaterial.dispose();
       diffuserOff.dispose();
-      plateMaterials.smoke.dispose();
+      plateMaterials.clear.dispose();
+      plateMaterials.black.dispose();
       plateMaterials.wood.dispose();
       splatMaterial.dispose();
       glowMaterial.dispose();
