@@ -106,12 +106,15 @@ export interface PlateChoice {
 
 export type LightEffect = 'colore fisso' | 'arcobaleno';
 
+/** Spina dell'alimentatore (universale 100–240 V): cambia solo la forma. */
+export type PlugType = 'EU' | 'UK' | 'CH' | 'US';
+
 /** Scelte che non cambiano la geometria (SPEC §6). */
 export interface CustomerChoices {
   effect: LightEffect;
   diffuser: boolean;
   mount: 'wall';
-  plug: 'EU';
+  plug: PlugType;
   proof: boolean;
 }
 

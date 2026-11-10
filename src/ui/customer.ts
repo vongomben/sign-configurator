@@ -34,6 +34,7 @@ import {
 } from '../geometry/plate';
 import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
+import { PLUGS, plugOf } from './plugs';
 import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
@@ -156,7 +157,16 @@ app.innerHTML = `
       </div>
       <div class="stage-meta">
         <p id="preview-status" data-generation="0">Generazione…</p>
-        <p id="preview-supply" hidden></p>
+        <div class="stage-power">
+          <label class="plug-pill" title="Spina dell'alimentatore: ${PLUGS[0]!.label}. Alimentatore universale 100–240 V.">
+            <span class="plug-icon">${PLUGS[0]!.icon}</span>
+            <span class="plug-label">Spina</span>
+            <select name="plug" aria-label="Spina dell'alimentatore">
+              ${PLUGS.map((plug) => `<option value="${plug.value}">${plug.short}</option>`).join('')}
+            </select>
+          </label>
+          <p id="preview-supply" hidden></p>
+        </div>
       </div>
     </div>
     <section class="sheet" aria-label="Strumento">
@@ -268,6 +278,20 @@ const openRequest = document.querySelector<HTMLButtonElement>('#open-request')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
 const supply = document.querySelector<HTMLElement>('#preview-supply')!;
+const plugInput = document.querySelector<HTMLSelectElement>('select[name="plug"]')!;
+const plugPill = document.querySelector<HTMLElement>('.plug-pill')!;
+const plugIcon = document.querySelector<HTMLElement>('.plug-icon')!;
+
+/** Disegno e title della pillola seguono la spina scelta. */
+function syncPlug(): void {
+  const plug = plugOf(plugInput.value);
+  plugIcon.innerHTML = plug.icon;
+  plugPill.title = `Spina dell'alimentatore: ${plug.label}. Alimentatore universale 100–240 V.`;
+}
+plugInput.addEventListener('change', () => {
+  syncPlug();
+  if (shell.dataset.sheet === 'request') renderSummary();
+});
 const editButton = document.querySelector<HTMLButtonElement>('#edit-paths')!;
 const restoreButton = document.querySelector<HTMLButtonElement>('#restore-paths')!;
 const submitButton = document.querySelector<HTMLButtonElement>('#submit-order')!;
@@ -344,7 +368,7 @@ function customerOrder(source: OrderSource): SignOrderV4 {
     params: orderParams(),
     paths: edited?.paths ?? null,
     crossings: edited?.crossings ?? [],
-    customer: { ...DEFAULT_CUSTOMER, effect: effectOf(), diffuser: diffuserOn() },
+    customer: { ...DEFAULT_CUSTOMER, effect: effectOf(), diffuser: diffuserOn(), plug: plugOf(plugInput.value).value },
     plate: plateChoice(),
   };
 }
@@ -481,6 +505,7 @@ function renderSummary(): void {
   }
   if (overrides.LED_PER_M) rows.push(['Densità dei LED', `${overrides.LED_PER_M} LED/m`]);
   rows.push(['Controller', `${CONTROLLER.name} (${CONTROLLER.model})`]);
+  rows.push(['Spina', `${plugOf(plugInput.value).label} · alimentatore 100–240 V`]);
   if (lastPower) {
     rows.push(['Alimentatore', `${lastPower.voltageV} V · ${lastPower.supplyA} A`]);
     for (const warning of lastPower.warnings) rows.push(['Attenzione', warning]);
