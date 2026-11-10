@@ -14,6 +14,11 @@ export function signSlug(value: string): string {
   return cut || 'insegna';
 }
 
-export function stlFileName(source: string, heightMm: number, part: 'housing' | 'diffuser'): string {
+export function stlFileName(source: string, heightMm: number, part: 'housing' | 'diffuser' | 'fondale'): string {
   return `${signSlug(source)}-${heightMm}mm-${part}.stl`;
+}
+
+/** File di taglio laser del fondale (SPEC §13): stesso nome dell'STL, in SVG. */
+export function plateSvgFileName(source: string, heightMm: number): string {
+  return `${signSlug(source)}-${heightMm}mm-fondale.svg`;
 }

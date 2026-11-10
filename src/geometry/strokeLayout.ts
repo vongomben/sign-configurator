@@ -1,4 +1,5 @@
 // Testo in un font a tratto singolo → polilinee in mm e grafo [C]. Niente [A] né [B].
+import { splineThroughPolyline } from './smooth';
 import { getFont, type FontEntry } from '../fonts/registry';
 import type { FontBytesReader } from '../fonts/loadFont';
 import { fetchFontBytes } from '../fonts/loadFont';
@@ -86,7 +87,9 @@ export async function layoutStroke(
     pen -= kerningOf(font, prev, ch) * mmPerUnit;
     const own: Point[] = [];
     for (const stroke of glyph.strokes) {
-      const points = stroke.points.map((p): Point => [pen + p[0] * mmPerUnit, p[1] * mmPerUnit]);
+      const raw = stroke.points.map((p): Point => [pen + p[0] * mmPerUnit, p[1] * mmPerUnit]);
+      // I glifi sono spezzate: la spline passa per i vertici e ricostruisce le curve del font.
+      const points = splineThroughPolyline(raw, stroke.closed);
       if (points.length >= 2) {
         placed.push({ points, closed: stroke.closed });
         own.push(...points);

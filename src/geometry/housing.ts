@@ -21,6 +21,8 @@ import {
 
 const RIBBON_HALF = 0.05;
 const ROUND_SEGMENTS = 32;
+/** Segmenti per giro degli offset di chiusura e apertura: archi da poco più di 1 mm. */
+const SMOOTH_SEGMENTS = 16;
 
 export interface HousingPath extends Pick<ChainPath, 'closed' | 'lengthMm' | 'hinges'> {
   id: number;
@@ -171,16 +173,26 @@ function innerDir(points: readonly Vec2[], index: number): Vec2 | null {
   return cross > 0 ? n : scale(n, -1);
 }
 
-/** Polilinee sul bordo interno del canale, da gonfiare della freccia. */
-function innerBands(
+/**
+ * Allargamento del canale verso l'interno delle curve, per la freccia della catena (SPEC §5 [H]):
+ * fra due cerniere la striscia rigida taglia la curva e il suo bordo interno esce dal canale di
+ * `sagittaMm`. Lungo la linea levigata l'allargamento vale la freccia entro mezzo passo da ogni
+ * cerniera e scende a zero in un passo di rampa: nessun gradino né lente chiusa sul bordo.
+ * Restituisce poligoni da unire al canale, uno per ogni tratto continuo e per lato.
+ */
+function innerWidening(
   path: HousingPath,
+  line: readonly Vec2[],
   halfW: number,
   budget: number,
   wallMin: number,
+  pitch: number,
   warnings: string[],
-): { points: Vec2[]; radius: number }[] {
-  if (path.points.length < 3 || budget < 0.05) return [];
-  const samples: { at: Vec2; extra: number; index: number; dir: Vec2 }[] = [];
+): Vec2[][] {
+  if (line.length < 3 || budget < 0.05) return [];
+  const along: number[] = [0];
+  for (let i = 1; i < line.length; i++) along.push(along[i - 1]! + Math.hypot(line[i]![0] - line[i - 1]![0], line[i]![1] - line[i - 1]![1]));
+  const hinges: { s: number; extra: number; side: 1 | -1 }[] = [];
   for (const hinge of path.hinges) {
     if (hinge.sagittaMm > budget + 0.05) {
       warnings.push(
@@ -189,42 +201,53 @@ function innerBands(
     }
     const extra = Math.min(hinge.sagittaMm, budget);
     if (extra < 0.05) continue;
-    const index = nearestIndex(path.points, hinge);
-    const dir = innerDir(path.points, index);
+    const index = nearestIndex(line, hinge);
+    const dir = innerDir(line, Math.min(Math.max(index, 1), line.length - 2));
     if (!dir) continue;
-    samples.push({
-      at: [hinge.x + dir[0] * halfW, hinge.y + dir[1] * halfW],
-      extra,
-      index,
-      dir,
+    const tangent = unit(sub(line[Math.min(index + 1, line.length - 1)]!, line[Math.max(index - 1, 0)]!));
+    const side: 1 | -1 = dir[0] * left(tangent)[0] + dir[1] * left(tangent)[1] >= 0 ? 1 : -1;
+    hinges.push({ s: along[index]!, extra, side });
+  }
+  if (hinges.length === 0) return [];
+  const flat = pitch / 2;
+  const ramp = Math.max(pitch, 1);
+  const polys: Vec2[][] = [];
+  for (const side of [1, -1] as const) {
+    const own = hinges.filter((h) => h.side === side);
+    if (own.length === 0) continue;
+    const extraAt = line.map((_, i) => {
+      let best = 0;
+      for (const h of own) {
+        const d = Math.abs(along[i]! - h.s);
+        const k = d <= flat ? 1 : d >= flat + ramp ? 0 : 1 - (d - flat) / ramp;
+        best = Math.max(best, h.extra * k);
+      }
+      return best;
     });
-  }
-  const bands: { points: Vec2[]; radius: number }[] = [];
-  let cur: Vec2[] = [];
-  let radius = 0;
-  let prevIndex = -999;
-  let prevDir: Vec2 | null = null;
-  const flush = (): void => {
-    if (radius >= 0.05 && cur.length >= 1) {
-      const origin = cur[0]!;
-      const stub: Vec2 = [origin[0] + 0.02, origin[1]];
-      const points = cur.length >= 2 ? cur : [origin, stub];
-      bands.push({ points, radius });
+    let run: number[] = [];
+    const flush = (): void => {
+      if (run.length >= 2) {
+        const outer: Vec2[] = [];
+        const inner: Vec2[] = [];
+        for (const i of run) {
+          const prev = line[Math.max(i - 1, 0)]!;
+          const next = line[Math.min(i + 1, line.length - 1)]!;
+          const n = scale(left(unit(sub(next, prev))), side);
+          // Parte un po' dentro il canale, così il poligono si salda senza fessure.
+          inner.push(add(line[i]!, scale(n, halfW - 0.3)));
+          outer.push(add(line[i]!, scale(n, halfW + extraAt[i]!)));
+        }
+        polys.push([...inner, ...outer.reverse()]);
+      }
+      run = [];
+    };
+    for (let i = 0; i < line.length; i++) {
+      if (extraAt[i]! > 0.01) run.push(i);
+      else flush();
     }
-    cur = [];
-    radius = 0;
-    prevDir = null;
-  };
-  for (const sample of samples) {
-    const turned = prevDir !== null && prevDir[0] * sample.dir[0] + prevDir[1] * sample.dir[1] < 0.5;
-    if (cur.length > 0 && (sample.index > prevIndex + 1 || turned)) flush();
-    radius = Math.max(radius, sample.extra);
-    cur.push(sample.at);
-    prevIndex = sample.index;
-    prevDir = sample.dir;
+    flush();
   }
-  flush();
-  return bands;
+  return polys;
 }
 
 /** Nastro sottile attorno alla polilinea, poi gonfiato con offset. */
@@ -254,6 +277,39 @@ export function offsetCenterline(wasm: ManifoldToplevel, points: readonly Vec2[]
   const grown = band.offset(Math.max(radius - RIBBON_HALF, 0.02), 'Round', 2, ROUND_SEGMENTS);
   band.delete();
   return grown;
+}
+
+/**
+ * Chiusura morfologica del canale: riempie buchi e tacche più stretti di `minWidth`, cioè le
+ * punte e le isole di parete troppo sottili per essere stampate.
+ * - Sulle curve strette una banda interna limitata dal budget di parete tocca il canale alle
+ *   estremità della corda ma non nel mezzo: resta chiusa una lente sottile (pilastrino nel canale,
+ *   fessura nel diffusore).
+ * - Agli incroci e alle giunzioni i due canali lasciano fra loro spicchi di parete appuntiti, che
+ *   nel diffusore si vedono come tacche scure.
+ * Una parete vera fra due canali non contigui è larga almeno 2·WALL + MIN_GAP (sotto, l'invio è
+ * già bloccato per fusione), molto più di `minWidth`; la parete esterna confina con il fuori, che
+ * è largo, e la chiusura non la tocca. Il risultato resta dentro `outline`. Non libera gli ingressi.
+ */
+export function closeChannel(
+  wasm: ManifoldToplevel,
+  section: CrossSection,
+  outline: CrossSection,
+  minWidth: number,
+): CrossSection {
+  const r = minWidth / 2;
+  if (!(r > 0) || section.isEmpty()) return section;
+  // Chiusura (+r, −r) e apertura (−r, +r) di seguito: i due −r centrali diventano uno solo di 2r.
+  // L'apertura arrotonda gli spigoli in fuori, così l'inizio e la fine di un allargamento non
+  // lasciano gradini. Il canale è largo almeno CHANNEL_W, molto più di `minWidth`.
+  const grown = section.offset(r, 'Round', 2, SMOOTH_SEGMENTS);
+  const shrunk = grown.offset(-2 * r, 'Round', 2, SMOOTH_SEGMENTS);
+  grown.delete();
+  const smoothed = shrunk.offset(r, 'Round', 2, SMOOTH_SEGMENTS);
+  shrunk.delete();
+  const clipped = smoothed.intersect(outline);
+  smoothed.delete();
+  return clipped;
 }
 
 function contoursOf(section: CrossSection): [number, number][][] {
@@ -374,8 +430,8 @@ export function buildHousing(wasm: ManifoldToplevel, request: HousingRequest): H
       const run = prepareRun(path, line, request.crossings, p.CROSSING_GAP);
       outlineParts.push(keep(offsetCenterline(wasm, line, halfW + p.WALL)));
       channelParts.push(keep(offsetCenterline(wasm, run.channelLine, halfW)));
-      for (const band of innerBands(path, halfW, budget, p.WALL_MIN, warnings)) {
-        channelParts.push(keep(offsetCenterline(wasm, band.points, band.radius)));
+      for (const poly of innerWidening(path, line, halfW, budget, p.WALL_MIN, p.HINGE_PITCH, warnings)) {
+        channelParts.push(keep(new CrossSection([poly], 'NonZero')));
       }
       if (path.dot && line.length >= 2) {
         const inset = p.DOT_WIRE_HOLE_D / 2 + 0.35;
@@ -411,8 +467,10 @@ export function buildHousing(wasm: ManifoldToplevel, request: HousingRequest): H
     const outlineUnion = outlineParts.length > 0 ? CrossSection.union(outlineParts) : new CrossSection([]);
     const outline = keep(outlineUnion.simplify(0.001));
     if (outline !== outlineUnion) outlineUnion.delete();
-    const channel = keep(rawChannel.intersect(outline));
-    if (rawChannel !== channel) rawChannel.delete();
+    const clipped = rawChannel.intersect(outline);
+    if (rawChannel !== clipped) rawChannel.delete();
+    const channel = keep(closeChannel(wasm, clipped, outline, 2 * p.WALL_MIN));
+    if (channel !== clipped) clipped.delete();
     const slots: HousingSlot[] = [];
     const wide = { ...p, WIRE_SLOT_W: p.CHANNEL_W };
     for (const pending of freeSlots) {

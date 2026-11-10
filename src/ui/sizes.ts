@@ -1,4 +1,4 @@
-// Taglie del passo 3 (SPEC §12.2). L'altezza fa fede; la taglia è solo un'etichetta.
+// Taglie dello strumento Misura (SPEC §12.2). L'altezza fa fede; la taglia è solo un'etichetta.
 
 import type { SizePreset } from '../order/schema';
 

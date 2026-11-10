@@ -8,10 +8,10 @@ import { getFont } from '../fonts/registry';
 import { applyCoverage, coverSign } from '../geometry/coverage';
 import { buildStrip, type StripModel } from '../geometry/strip';
 import type { TubePairing } from '../geometry/tubePairing';
-import type { RasterImageSource, SvgImageSource } from '../order/schema';
+import type { AnyOrder, RasterImageSource, SvgImageSource } from '../order/schema';
 import { layoutRaster } from '../sources/bitmapCodec';
 import { layoutSvg } from '../sources/svgPaths';
-import { generateSign, type GenerateResult, type OrderV1, type SignOrder } from './generate';
+import { generateSign, type GenerateResult } from './generate';
 
 export interface StripModes {
   cuspMode: CuspMode;
@@ -142,7 +142,7 @@ const generator = {
       buffers,
     );
   },
-  async generate(order: SignOrder | OrderV1): Promise<GenerateResult> {
+  async generate(order: AnyOrder): Promise<GenerateResult> {
     const result = await generateSign(order);
     return Comlink.transfer(result, [
       result.housingMesh.vertProperties.buffer,

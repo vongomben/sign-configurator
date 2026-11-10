@@ -1,96 +1,273 @@
-// Cliente: testo, font, altezza, colore e anteprima 3D (SPEC §1).
-import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
+// Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
+import './customer.css';
+import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
+import { PRICING_VERSION } from '../pricing';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
 import type { PathEditor } from '../editor/editor';
 import { FONTS } from '../fonts/registry';
-import type { OrderCrossing, OrderPath, SignOrder } from '../order/schema';
-import type { TraceMode } from '../order/schema';
+import {
+  DEFAULT_CUSTOMER,
+  type LightEffect,
+  type OrderCrossing,
+  type OrderPath,
+  type OrderSource,
+  type SignOrderV4,
+  type SizePreset,
+  type TraceMode,
+} from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
-import { stlFileName } from './signSlug';
+import { plateSvgFileName, stlFileName } from './signSlug';
+import { plateToSvg } from '../export/plate';
+import {
+  DEFAULT_PLATE,
+  PLATE_MATERIALS,
+  PLATE_SHAPES,
+  clampCornerR,
+  clampMargin,
+  type PlateChoice,
+  type PlateMaterial,
+  type PlateShape,
+} from '../geometry/plate';
+import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
+import { SIZES } from './sizes';
+import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
 const WALL_MIN_MM = 1.6;
 const WALL_MAX_MM = 5;
+const HEIGHT_MIN_MM = 40;
+const HEIGHT_MAX_MM = 800;
+const SWATCHES = ['#ff2fd6', '#ff3b30', '#ff9500', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#bf5af2', '#f5f5f7'] as const;
+
+const TITLES: Record<string, string> = {
+  text: 'Testo',
+  font: 'Font',
+  size: 'Misura',
+  color: 'Colore',
+  image: 'Immagine',
+  plate: 'Fondale',
+  tech: 'Parametri tecnici',
+  more: 'Altro',
+  request: 'Richiedi',
+};
+
+function icon(path: string): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`;
+}
+
+const ICONS: Record<string, string> = {
+  text: icon('M5 6h14M5 12h14M5 18h9'),
+  font: icon('M6 19 L12 5 L18 19M8.5 14h7'),
+  size: icon('M4 20 L20 4M14 4h6v6M4 14v6h6'),
+  color: icon('M12 5a7 7 0 1 0 0.01 0'),
+  image: icon('M4 6h16v12H4zM4 15l4-4 3 3 3-4 6 5'),
+  plate: icon('M4 5h16v14H4zM8 9h8M8 13h5'),
+  tech: icon('M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4'),
+  more: icon('M6 12h.01M12 12h.01M18 12h.01'),
+};
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const fontOptions = FONTS.map((font) => `<option value="${font.id}">${font.name}</option>`).join('');
-app.innerHTML = `
-  <h1>Configuratore insegne neon</h1>
-  <section class="preview">
-    <p class="preview-fields">
-      <span>
-        <label><input type="radio" name="sourceKind" value="text" checked> Testo</label>
-        <label><input type="radio" name="sourceKind" value="image"> Immagine</label>
+const fontCards = FONTS.map((font, index) => `
+  <button type="button" class="font-card" data-font="${font.id}" aria-pressed="${index === 0 ? 'true' : 'false'}">
+    <span class="font-sample">Ciao</span>
+    <span class="font-name">${font.name}</span>
+  </button>`).join('');
+const sizeChips = SIZES.map((size) => `
+  <button type="button" class="size-chip" data-size="${size.heightMm}" aria-pressed="${size.id === 'M' ? 'true' : 'false'}">
+    ${size.id}<span>${size.heightMm / 10} cm</span>
+  </button>`).join('');
+const swatches = SWATCHES.map((hex) => `
+  <button type="button" class="swatch" data-color="${hex}" aria-label="${hex}" aria-pressed="${hex === '#ff2fd6' ? 'true' : 'false'}"></button>`).join('');
+const tools = [
+  ['text', 'Testo'],
+  ['font', 'Font'],
+  ['size', 'Misura'],
+  ['color', 'Colore'],
+  ['image', 'Immagine'],
+  ['plate', 'Fondale'],
+  ['tech', 'Tecnica'],
+  ['more', 'Altro'],
+] as const;
+const techGroups = TECH_GROUPS.map((group) => `
+  <fieldset class="tech-group">
+    <legend>${group.title}</legend>
+    ${group.fields.map((field) => `
+    <label class="tech-field">
+      <span>${field.label} <small>${field.key}</small></span>
+      <span class="tech-input">
+        <input name="tech-${field.key}" type="number" inputmode="decimal" min="${field.min}" max="${field.max}" step="${field.step}" value="${DEFAULT_PARAMS[field.key]}">
+        <span>${field.unit}</span>
       </span>
-      <label data-source="text">Testo <input name="text" value="Ciao" autocomplete="off"></label>
-      <label data-source="text">Font <select name="fontId">${fontOptions}</select></label>
-      <label data-source="image" hidden>File <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg"></label>
-      <label data-source="trace" hidden>Traccia
-        <select name="trace">
-          <option value="centerline" selected>Linea centrale</option>
-          <option value="outline">Contorno</option>
-        </select>
-      </label>
-      <label data-source="raster" hidden>Soglia <input name="threshold" type="range" min="0" max="255" step="1" value="128"> <span id="threshold-value">128</span></label>
-      <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
-      <canvas id="threshold-preview" data-source="raster" hidden></canvas>
-      <label>Altezza mm <input name="heightMm" type="number" min="40" max="800" value="120"></label>
-      <label>Cornice mm <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}"></label>
-    </p>
-    <div id="stage"></div>
-    <p class="editor-actions">
-      <button type="button" id="edit-paths" disabled>Modifica tracciati</button>
-      <button type="button" id="restore-paths" disabled>Ripristina originale</button>
-      <button type="button" id="submit-order">Invio</button>
-      ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
-    </p>
-    <canvas id="path-editor" hidden></canvas>
-    <div id="path-toolbar" hidden></div>
-    <p id="preview-status" data-generation="0">Generazione…</p>
-    <div class="preview-controls">
-      <fieldset>
-        <legend>Vista</legend>
-        <label><input type="radio" name="mode" value="spenta"> Spenta</label>
-        <label><input type="radio" name="mode" value="accesa" checked> Accesa</label>
-        <label><input type="radio" name="mode" value="senza diffusore"> Senza diffusore</label>
-      </fieldset>
-      <fieldset>
-        <legend>Effetto</legend>
-        <label><input type="radio" name="effect" value="fisso" checked> Colore fisso</label>
-        <label><input type="radio" name="effect" value="arcobaleno"> Arcobaleno</label>
-      </fieldset>
-      <label>Colore <input type="color" name="color" value="#ff2fd6"></label>
+    </label>`).join('')}
+    ${group.title === 'Striscia LED' ? `
+    <label class="tech-field">
+      <span>Densità dei LED <small>LED_PER_M</small></span>
+      <select name="tech-LED_PER_M">
+        ${ledDensityOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+    </label>` : ''}
+    ${group.title === 'Bordi' ? `
+    <label class="tech-field">
+      <span>Profilo <small>EDGE_PROFILE</small></span>
+      <select name="tech-EDGE_PROFILE">
+        ${EDGE_PROFILES.map((p) => `<option value="${p.value}"${p.value === DEFAULT_PARAMS.EDGE_PROFILE ? ' selected' : ''}>${p.label}</option>`).join('')}
+      </select>
+    </label>` : ''}
+  </fieldset>`).join('');
+
+app.innerHTML = `
+  <div class="shell" data-sheet="">
+    <h1 class="sr-only">Configuratore insegne neon</h1>
+    <div class="sr-only">
+      <input type="radio" name="sourceKind" value="text" checked>
+      <input type="radio" name="sourceKind" value="image">
     </div>
-  </section>
+    <div class="stage-wrap">
+      <div id="stage"></div>
+      <canvas id="path-editor" hidden></canvas>
+      <div class="hud">
+        <div class="hud-view">
+          <div class="mode-switch" role="radiogroup" aria-label="Vista">
+            <label><input type="radio" name="mode" value="accesa" checked><span>Accesa</span></label>
+            <label><input type="radio" name="mode" value="spenta"><span>Spenta</span></label>
+          </div>
+          <div class="mode-switch diffuser-switch" role="radiogroup" aria-label="Diffusore">
+            <label><input type="radio" name="diffuser" value="on" checked><span>Con diffusore</span></label>
+            <label><input type="radio" name="diffuser" value="off"><span>Senza diffusore</span></label>
+          </div>
+        </div>
+        <label class="wall-field">
+          <span>Cornice mm</span>
+          <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}" aria-label="Cornice in millimetri">
+        </label>
+        <button type="button" id="open-request" aria-pressed="false">Richiedi</button>
+      </div>
+      <div class="stage-meta">
+        <p id="preview-status" data-generation="0">Generazione…</p>
+        <p id="preview-supply" hidden></p>
+      </div>
+    </div>
+    <section class="sheet" aria-label="Strumento">
+      <header class="sheet-bar">
+        <h2 id="sheet-title">Testo</h2>
+        <button type="button" id="sheet-close">${copy.buttons.editorDone}</button>
+      </header>
+      <div class="sheet-body">
+        <div class="pane" data-pane="text" hidden>
+          <input name="text" value="Ciao" autocomplete="off" aria-label="Testo">
+        </div>
+        <div class="pane" data-pane="font" hidden>
+          <div class="font-row">${fontCards}</div>
+          <select name="fontId" hidden>${fontOptions}</select>
+        </div>
+        <div class="pane" data-pane="size" hidden>
+          <div class="sizes">${sizeChips}</div>
+          <div class="height-step">
+            <button type="button" data-height-step="-10" aria-label="Meno 10 millimetri">−</button>
+            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="Altezza in millimetri">
+            <button type="button" data-height-step="10" aria-label="Più 10 millimetri">+</button>
+          </div>
+        </div>
+        <div class="pane" data-pane="color" hidden>
+          <div class="swatches">${swatches}</div>
+          <label class="color-free">Colore <input type="color" name="color" value="#ff2fd6"></label>
+          <div class="choice" role="radiogroup" aria-label="Effetto">
+            <label><input type="radio" name="effect" value="fisso" checked><span>Colore fisso</span></label>
+            <label><input type="radio" name="effect" value="arcobaleno"><span>Arcobaleno</span></label>
+          </div>
+        </div>
+        <div class="pane" data-pane="image" hidden>
+          <label class="image-drop">
+            <span>Carica un'immagine</span>
+            <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg">
+          </label>
+          <label class="field" data-source="trace" hidden>Traccia
+            <select name="trace">
+              <option value="centerline" selected>Linea centrale</option>
+              <option value="outline">Contorno</option>
+            </select>
+          </label>
+          <label class="field" data-source="raster" hidden>Soglia
+            <input name="threshold" type="range" min="0" max="255" step="1" value="128">
+            <span id="threshold-value">128</span>
+          </label>
+          <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
+          <canvas id="threshold-preview" data-source="raster" hidden></canvas>
+          <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
+        </div>
+        <div class="pane" data-pane="plate" hidden>
+          <div class="choice plate-material" role="radiogroup" aria-label="Materiale del fondale">
+            <label><input type="radio" name="plateMaterial" value="none" checked><span>Nessuno</span></label>
+            ${(Object.keys(PLATE_MATERIALS) as PlateMaterial[]).map((id) => `<label><input type="radio" name="plateMaterial" value="${id}"><span>${PLATE_MATERIALS[id].label} · ${PLATE_MATERIALS[id].thicknessMm} mm</span></label>`).join('')}
+          </div>
+          <div class="choice plate-shape plate-option" role="radiogroup" aria-label="Forma del fondale">
+            ${PLATE_SHAPES.map((shape) => `<label><input type="radio" name="plateShape" value="${shape.value}"${shape.value === DEFAULT_PLATE.shape ? ' checked' : ''}><span>${shape.label}</span></label>`).join('')}
+          </div>
+          <label class="tech-field plate-option">
+            <span>Margine attorno all'insegna</span>
+            <span class="tech-input">
+              <input name="plateMarginMm" type="number" inputmode="decimal" min="${PLATE_MARGIN_MIN}" max="${PLATE_MARGIN_MAX}" step="1" value="${DEFAULT_PLATE.marginMm}">
+              <span>mm</span>
+            </span>
+          </label>
+          <label class="tech-field plate-option plate-corner">
+            <span>Raggio degli angoli</span>
+            <span class="tech-input">
+              <input name="plateCornerRMm" type="number" inputmode="decimal" min="${PLATE_CORNER_R_MIN}" max="${PLATE_CORNER_R_MAX}" step="1" value="${DEFAULT_PLATE.cornerRMm}">
+              <span>mm</span>
+            </span>
+          </label>
+          <p id="plate-size" class="tech-note" hidden></p>
+        </div>
+        <div class="pane" data-pane="tech" hidden>
+          <p class="tech-note">Cambiano la geometria stampata: valgono per l'anteprima, gli STL e la richiesta.</p>
+          ${techGroups}
+          <div class="actions">
+            <button type="button" id="tech-reset">Valori predefiniti</button>
+          </div>
+        </div>
+        <div class="pane" data-pane="more" hidden>
+          <div class="actions">
+            <button type="button" id="edit-paths" disabled>${copy.buttons.editPaths}</button>
+            <button type="button" id="restore-paths" disabled>${copy.buttons.restorePaths}</button>
+          </div>
+          <div id="path-toolbar" hidden></div>
+        </div>
+        <div class="pane" data-pane="request" hidden>
+          <dl id="summary"></dl>
+          <p id="blocked-reason" hidden></p>
+          <div class="request-actions">
+            <button type="button" id="submit-order">${copy.buttons.send}</button>
+            ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
+          </div>
+        </div>
+      </div>
+    </section>
+    <nav class="dock" aria-label="Strumenti">
+      ${tools.map(([id, label]) => `<button type="button" data-tool="${id}" aria-pressed="false">${ICONS[id]}<span>${label}</span></button>`).join('')}
+    </nav>
+  </div>
 `;
 
+const shell = document.querySelector<HTMLElement>('.shell')!;
+const sheetTitle = document.querySelector<HTMLElement>('#sheet-title')!;
+const sheetClose = document.querySelector<HTMLButtonElement>('#sheet-close')!;
+const openRequest = document.querySelector<HTMLButtonElement>('#open-request')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
+const supply = document.querySelector<HTMLElement>('#preview-supply')!;
 const editButton = document.querySelector<HTMLButtonElement>('#edit-paths')!;
 const restoreButton = document.querySelector<HTMLButtonElement>('#restore-paths')!;
 const submitButton = document.querySelector<HTMLButtonElement>('#submit-order')!;
 const downloadButton = document.querySelector<HTMLButtonElement>('#download-stl');
-const orderActions = document.querySelector<HTMLElement>('.editor-actions')!;
-Object.assign(orderActions.style, {
-  position: 'fixed',
-  left: '0',
-  right: '0',
-  bottom: '0',
-  zIndex: '5',
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '8px',
-  margin: '0',
-  padding: '10px 12px',
-  background: '#f7f4ee',
-  boxShadow: '0 -1px 0 rgba(0,0,0,0.15)',
-});
-document.body.style.paddingBottom = '64px';
+const blockedReason = document.querySelector<HTMLElement>('#blocked-reason')!;
+const summary = document.querySelector<HTMLElement>('#summary')!;
 const editorCanvas = document.querySelector<HTMLCanvasElement>('#path-editor')!;
 const editorToolbar = document.querySelector<HTMLElement>('#path-toolbar')!;
 const textInput = document.querySelector<HTMLInputElement>('input[name="text"]')!;
@@ -103,12 +280,15 @@ const thresholdInput = document.querySelector<HTMLInputElement>('input[name="thr
 const thresholdValue = document.querySelector<HTMLElement>('#threshold-value')!;
 const invertInput = document.querySelector<HTMLInputElement>('input[name="invert"]')!;
 const thresholdPreview = document.querySelector<HTMLCanvasElement>('#threshold-preview')!;
-thresholdPreview.style.imageRendering = 'pixelated';
-thresholdPreview.style.background = '#111';
-thresholdPreview.style.maxWidth = '220px';
+const backToText = document.querySelector<HTMLButtonElement>('#back-to-text')!;
+const fontTool = document.querySelector<HTMLButtonElement>('[data-tool="font"]')!;
+const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
+const desktop = window.matchMedia('(min-width: 900px)');
 
 let svgMarkup: string | null = null;
 let svgName = 'immagine.svg';
+let lastTool = 'text';
+let blockReason = '';
 
 interface RasterSession {
   name: string;
@@ -120,6 +300,10 @@ interface RasterSession {
 
 let raster: RasterSession | null = null;
 
+function isDesktop(): boolean {
+  return desktop.matches;
+}
+
 function imageMode(): boolean {
   return document.querySelector<HTMLInputElement>('input[name="sourceKind"][value="image"]')!.checked;
 }
@@ -128,19 +312,51 @@ function traceMode(): TraceMode {
   return traceInput.value === 'outline' ? 'outline' : 'centerline';
 }
 
+function diffuserOn(): boolean {
+  return document.querySelector<HTMLInputElement>('input[name="diffuser"][value="on"]')!.checked;
+}
+
+function effectOf(): LightEffect {
+  const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
+  return effect?.value === 'arcobaleno' ? 'arcobaleno' : 'colore fisso';
+}
+
+function sizePresetOf(heightMm: number): SizePreset | null {
+  return SIZES.find((size) => size.heightMm === heightMm)?.id ?? null;
+}
+
+function customerOrder(source: OrderSource): SignOrderV4 {
+  const heightMm = Number(heightInput.value);
+  return {
+    schemaVersion: ORDER_SCHEMA_VERSION,
+    generatorVersion: GENERATOR_VERSION,
+    pricingVersion: PRICING_VERSION,
+    source,
+    heightMm,
+    sizePreset: sizePresetOf(heightMm),
+    color: color.value,
+    params: orderParams(),
+    paths: edited?.paths ?? null,
+    crossings: edited?.crossings ?? [],
+    customer: { ...DEFAULT_CUSTOMER, effect: effectOf(), diffuser: diffuserOn() },
+    plate: plateChoice(),
+  };
+}
+
+function litOn(): boolean {
+  return document.querySelector<HTMLInputElement>('input[name="mode"][value="accesa"]')!.checked;
+}
+
 function syncSourceFields(): void {
   const image = imageMode();
   const hasRaster = image && raster != null;
   const hasImage = image && (raster != null || svgMarkup != null);
   for (const el of document.querySelectorAll<HTMLElement>('[data-source]')) {
     const slot = el.dataset.source;
-    const show =
-      (slot === 'text' && !image) ||
-      (slot === 'image' && image) ||
-      (slot === 'trace' && hasImage) ||
-      (slot === 'raster' && hasRaster);
+    const show = (slot === 'trace' && hasImage) || (slot === 'raster' && hasRaster);
     el.hidden = !show;
   }
+  fontTool.classList.toggle('is-dimmed', image);
 }
 
 function wallMm(): number {
@@ -148,26 +364,276 @@ function wallMm(): number {
   if (!Number.isFinite(n)) return DEFAULT_PARAMS.WALL;
   return Math.min(WALL_MAX_MM, Math.max(WALL_MIN_MM, n));
 }
-const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
 
-const scene = mountSignScene(stage);
+const techNumberInputs = new Map<TechNumericKey, HTMLInputElement>(
+  TECH_FIELDS.map((field) => [field.key, document.querySelector<HTMLInputElement>(`input[name="tech-${field.key}"]`)!]),
+);
+const techProfileInput = document.querySelector<HTMLSelectElement>('select[name="tech-EDGE_PROFILE"]')!;
+const techDensityInput = document.querySelector<HTMLSelectElement>('select[name="tech-LED_PER_M"]')!;
+const techReset = document.querySelector<HTMLButtonElement>('#tech-reset')!;
+
+/** Override dell'ordine: la cornice dalla barra, il resto dallo strumento Tecnica. */
+function orderParams(): Partial<Params> {
+  const numbers: Partial<Record<TechNumericKey, string>> = {};
+  for (const [key, input] of techNumberInputs) numbers[key] = input.value;
+  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value }) };
+}
+
+const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMarginMm"]')!;
+const plateCornerInput = document.querySelector<HTMLInputElement>('input[name="plateCornerRMm"]')!;
+const plateSize = document.querySelector<HTMLElement>('#plate-size')!;
+
+/** Fondale scelto (SPEC §13). `null`: nessun fondale. */
+function plateChoice(): PlateChoice | null {
+  const material = document.querySelector<HTMLInputElement>('input[name="plateMaterial"]:checked')?.value ?? 'none';
+  if (!(material in PLATE_MATERIALS)) return null;
+  const shape = (document.querySelector<HTMLInputElement>('input[name="plateShape"]:checked')?.value ?? DEFAULT_PLATE.shape) as PlateShape;
+  return {
+    shape,
+    material: material as PlateMaterial,
+    marginMm: clampMargin(Number(plateMarginInput.value)),
+    cornerRMm: clampCornerR(Number(plateCornerInput.value)),
+  };
+}
+
+function syncPlateFields(): void {
+  const plate = plateChoice();
+  for (const el of document.querySelectorAll<HTMLElement>('.plate-option')) el.classList.toggle('is-dimmed', !plate);
+  for (const input of document.querySelectorAll<HTMLInputElement>('.plate-option input')) input.disabled = !plate;
+  // Il raggio vale solo per il rettangolo: la pillola ha metà del lato corto, il sagomato segue l'insegna.
+  document.querySelector<HTMLElement>('.plate-corner')!.hidden = plate !== null && plate.shape !== 'rect';
+  if (!plate) plateSize.hidden = true;
+}
+
+function cmLabel(mm: number): string {
+  const cm = Math.round((mm / 10) * 10) / 10;
+  return `${Number.isInteger(cm) ? String(cm) : cm.toFixed(1)} cm`;
+}
+
+function inkFor(hex: string): string {
+  const raw = hex.replace('#', '');
+  if (raw.length !== 6) return '#fffaf6';
+  const channel = (index: number): number => {
+    const value = Number.parseInt(raw.slice(index, index + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return luminance > 0.55 ? '#1c1916' : '#fffaf6';
+}
+
+function applyNeon(hex: string): void {
+  document.documentElement.style.setProperty('--neon', hex);
+  document.documentElement.style.setProperty('--on-neon', inkFor(hex));
+  for (const swatch of document.querySelectorAll<HTMLButtonElement>('.swatch')) {
+    swatch.setAttribute('aria-pressed', swatch.dataset.color?.toLowerCase() === hex.toLowerCase() ? 'true' : 'false');
+  }
+}
+
+function syncFontSamples(): void {
+  const sample = textInput.value.trim() || 'Ciao';
+  for (const el of document.querySelectorAll<HTMLElement>('.font-sample')) el.textContent = sample;
+  for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
+    card.setAttribute('aria-pressed', card.dataset.font === fontInput.value ? 'true' : 'false');
+  }
+}
+
+function syncSizeChips(): void {
+  const mm = Number(heightInput.value);
+  for (const chip of document.querySelectorAll<HTMLButtonElement>('.size-chip')) {
+    chip.setAttribute('aria-pressed', Number(chip.dataset.size) === mm ? 'true' : 'false');
+  }
+}
+
+function renderSummary(): void {
+  const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
+  const rows: [string, string][] = [];
+  if (imageMode()) rows.push(['Immagine', fileLabel() || 'immagine']);
+  else {
+    const font = FONTS.find((entry) => entry.id === fontInput.value);
+    rows.push(['Testo', textInput.value], ['Font', font?.name ?? fontInput.value]);
+  }
+  const mm = Number(heightInput.value);
+  rows.push(
+    ['Misura', Number.isFinite(mm) ? cmLabel(mm) : ''],
+    ['Colore', color.value],
+    ['Effetto', effect?.value === 'arcobaleno' ? 'Arcobaleno' : 'Colore fisso'],
+    ['Diffusore', diffuserOn() ? 'Sì' : 'No'],
+    ['Cornice', `${wallMm().toFixed(1)} mm`],
+  );
+  const plate = plateChoice();
+  rows.push([
+    'Fondale',
+    plate
+      ? `${PLATE_SHAPES.find((s) => s.value === plate.shape)?.label ?? plate.shape}, ${PLATE_MATERIALS[plate.material].label}, margine ${plate.marginMm} mm`
+      : 'Nessuno',
+  ]);
+  const overrides = orderParams();
+  for (const field of TECH_FIELDS) {
+    const value = overrides[field.key];
+    if (value !== undefined) rows.push([field.label, `${value} ${field.unit}`]);
+  }
+  if (overrides.LED_PER_M) rows.push(['Densità dei LED', `${overrides.LED_PER_M} LED/m`]);
+  if (overrides.EDGE_PROFILE) {
+    rows.push(['Profilo', EDGE_PROFILES.find((p) => p.value === overrides.EDGE_PROFILE)?.label ?? overrides.EDGE_PROFILE]);
+  }
+  summary.replaceChildren();
+  for (const [term, detail] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = term;
+    const dd = document.createElement('dd');
+    dd.textContent = detail;
+    summary.append(dt, dd);
+  }
+}
+
+// Tutti gli strumenti stanno in un solo foglio, uno sotto l'altro, ciascuno in una sezione
+// richiudibile (SPEC §12.2). La barra a destra è l'indice: porta alla sezione e la apre.
+const sheetBody = document.querySelector<HTMLElement>('.sheet-body')!;
+const sectionsBox = document.createElement('div');
+sectionsBox.className = 'sections';
+const sections = new Map<string, HTMLDetailsElement>();
+for (const [id] of tools) {
+  const pane = document.querySelector<HTMLElement>(`.pane[data-pane="${id}"]`)!;
+  const details = document.createElement('details');
+  details.className = 'section';
+  details.dataset.section = id;
+  details.open = true;
+  const summaryEl = document.createElement('summary');
+  summaryEl.textContent = TITLES[id] ?? id;
+  pane.hidden = false;
+  details.append(summaryEl, pane);
+  sectionsBox.append(details);
+  sections.set(id, details);
+}
+sheetBody.prepend(sectionsBox);
+const requestPane = document.querySelector<HTMLElement>('.pane[data-pane="request"]')!;
+
+function markTool(tool: string | null): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+    button.setAttribute('aria-pressed', button.dataset.tool === tool ? 'true' : 'false');
+  }
+}
+
+/** La sezione in cima al foglio: è quella evidenziata nella barra. */
+function sectionInView(): string | null {
+  const top = sheetBody.getBoundingClientRect().top + 8;
+  let current: string | null = null;
+  for (const [id, details] of sections) {
+    if (details.getBoundingClientRect().top <= top) current = id;
+  }
+  return current ?? tools[0][0];
+}
+
+let jumping = false;
+function scrollToSection(details: HTMLElement): void {
+  const offset = details.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top + sheetBody.scrollTop;
+  jumping = true;
+  sheetBody.scrollTo({ top: Math.max(0, offset - 4), behavior: 'auto' });
+  window.requestAnimationFrame(() => {
+    jumping = false;
+  });
+}
+
+sheetBody.addEventListener('scroll', () => {
+  if (jumping || shell.dataset.sheet !== 'config') return;
+  const id = sectionInView();
+  if (id) {
+    lastTool = id;
+    markTool(id);
+  }
+});
+
+function openSheet(pane: string): void {
+  const config = pane !== 'request';
+  shell.dataset.sheet = config ? 'config' : 'request';
+  sheetTitle.textContent = config ? 'Configura' : (TITLES.request ?? 'Richiedi');
+  sectionsBox.hidden = !config;
+  requestPane.hidden = config;
+  openRequest.setAttribute('aria-pressed', config ? 'false' : 'true');
+  if (!config) {
+    markTool(null);
+    sheetBody.scrollTop = 0;
+    renderSummary();
+    return;
+  }
+  const details = sections.get(pane);
+  if (details) {
+    details.open = true;
+    scrollToSection(details);
+  }
+  lastTool = pane;
+  markTool(pane);
+}
+
+function closeSheet(): void {
+  if (isDesktop()) {
+    openSheet(lastTool || 'text');
+    return;
+  }
+  shell.dataset.sheet = '';
+  markTool(null);
+  openRequest.setAttribute('aria-pressed', 'false');
+}
+
+function toggleSheet(pane: string): void {
+  const config = pane !== 'request';
+  const showing = config ? shell.dataset.sheet === 'config' && lastTool === pane : shell.dataset.sheet === 'request';
+  if (!isDesktop() && showing) {
+    closeSheet();
+    return;
+  }
+  openSheet(pane);
+}
+
+function selectKind(kind: 'text' | 'image'): void {
+  const input = document.querySelector<HTMLInputElement>(`input[name="sourceKind"][value="${kind}"]`);
+  if (!input || input.checked) return;
+  input.checked = true;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// Grigio scuro: il neon resta acceso sul fondo, e cornice nera e fondali si staccano (SPEC §12.2).
+const STAGE_BACKGROUND = 0x3a3a3e;
+const scene = mountSignScene(stage, { background: STAGE_BACKGROUND });
 const generator = createGenerator();
+applyNeon(color.value);
 scene.setColor(color.value);
 scene.setMode('accesa');
 scene.setEffect('fisso');
 
 let previewDiffuser = true;
+
+function applyPreviewMode(): void {
+  const on = diffuserOn();
+  const mode: PreviewMode = on ? (litOn() ? 'accesa' : 'spenta') : 'senza diffusore';
+  scene.setMode(mode);
+  if (on === previewDiffuser) return;
+  previewDiffuser = on;
+  void showSign();
+}
+
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
   input.addEventListener('change', () => {
-    if (!input.checked) return;
-    scene.setMode(input.value as PreviewMode);
-    const next = input.value !== 'senza diffusore';
-    if (next === previewDiffuser) return;
-    previewDiffuser = next;
-    void showSign();
+    if (input.checked) applyPreviewMode();
   });
 }
-color.addEventListener('input', () => scene.setColor(color.value));
+for (const input of document.querySelectorAll<HTMLInputElement>('input[name="diffuser"]')) {
+  input.addEventListener('change', () => {
+    if (input.checked) applyPreviewMode();
+  });
+}
+color.addEventListener('input', () => {
+  applyNeon(color.value);
+  scene.setColor(color.value);
+});
+for (const swatch of document.querySelectorAll<HTMLButtonElement>('.swatch')) {
+  swatch.addEventListener('click', () => {
+    const hex = swatch.dataset.color;
+    if (!hex) return;
+    color.value = hex;
+    color.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="effect"]')) {
   input.addEventListener('change', () => {
     if (input.checked) scene.setEffect(input.value === 'arcobaleno' ? 'arcobaleno' : 'fisso');
@@ -202,7 +668,10 @@ function blocksSubmit(warnings: readonly string[]): boolean {
 }
 
 function updateSubmit(): void {
-  submitButton.disabled = liveBlocked || workerBlocked;
+  const blocked = liveBlocked || workerBlocked;
+  submitButton.disabled = blocked;
+  blockedReason.hidden = !blocked;
+  blockedReason.textContent = blocked ? (liveBlocked ? copy.warnings.editor : blockReason || 'Correggi prima di inviare.') : '';
 }
 
 function rememberSource(): void {
@@ -224,6 +693,7 @@ function revertSource(): void {
   const kind = document.querySelector<HTMLInputElement>(`input[name="sourceKind"][value="${sourceMemory.kind}"]`);
   if (kind) kind.checked = true;
   syncSourceFields();
+  syncFontSamples();
 }
 
 function dropEdits(): void {
@@ -252,6 +722,8 @@ interface ReadyStl {
   label: string;
   heightMm: number;
   diffuserOn: boolean;
+  /** Fondale: STL della lastra e SVG di taglio laser. */
+  plate: { stl: ArrayBuffer; svg: string } | null;
 }
 
 let readyStl: ReadyStl | null = null;
@@ -270,8 +742,8 @@ function invalidateStl(): void {
   clearStl();
 }
 
-function saveStl(name: string, buffer: ArrayBuffer): void {
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));
+function saveStl(name: string, buffer: ArrayBuffer | string, type = 'model/stl'): void {
+  const url = URL.createObjectURL(new Blob([buffer], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -279,6 +751,18 @@ function saveStl(name: string, buffer: ArrayBuffer): void {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Pillola in basso a destra: alimentatore a 5 V, se la distinta lo conosce. */
+function showSupply(bom: { assembly?: { supplyA?: number } } | null): void {
+  const amps = bom?.assembly?.supplyA ?? 0;
+  if (!(amps > 0)) {
+    supply.hidden = true;
+    supply.textContent = '';
+    return;
+  }
+  supply.hidden = false;
+  supply.textContent = `5 V · ${amps} A`;
 }
 
 function fileLabel(): string {
@@ -292,6 +776,10 @@ downloadButton?.addEventListener('click', () => {
   if (!ready || downloadButton?.disabled) return;
   saveStl(stlFileName(ready.label, ready.heightMm, 'housing'), ready.housing);
   if (ready.diffuserOn) saveStl(stlFileName(ready.label, ready.heightMm, 'diffuser'), ready.diffuser);
+  if (ready.plate) {
+    saveStl(stlFileName(ready.label, ready.heightMm, 'fondale'), ready.plate.stl);
+    saveStl(plateSvgFileName(ready.label, ready.heightMm), ready.plate.svg, 'image/svg+xml');
+  }
 });
 
 let request = 0;
@@ -299,6 +787,7 @@ async function showSign(): Promise<void> {
   const id = ++request;
   const epoch = editEpoch;
   clearStl();
+  showSupply(null);
   syncSourceFields();
   const heightMm = Number(heightInput.value);
   if (!(heightMm > 0)) {
@@ -315,7 +804,7 @@ async function showSign(): Promise<void> {
     status.textContent = 'Carica un file SVG, PNG o JPG.';
     return;
   }
-  let order: SignOrder;
+  let order: SignOrderV4;
   let notes: string[] = [];
   if (image && raster) {
     const built = rebuildRaster(raster.luminance, raster.width, raster.height, {
@@ -331,46 +820,19 @@ async function showSign(): Promise<void> {
     }
     paintThresholdPreview(thresholdPreview, built.binary);
     notes = raster.warnings;
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: built.source,
-      heightMm,
-      color: color.value,
-      params: { WALL: wallMm() },
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-    };
+    order = customerOrder(built.source);
   } else if (image && svgMarkup) {
     try {
       const imported = importSvg(svgMarkup, { heightMm, name: svgName, trace: traceMode() });
       notes = imported.warnings;
-      order = {
-        schemaVersion: ORDER_SCHEMA_VERSION,
-        generatorVersion: GENERATOR_VERSION,
-        source: imported.source,
-        heightMm,
-        color: color.value,
-        params: { WALL: wallMm() },
-        paths: edited?.paths ?? null,
-        crossings: edited?.crossings ?? [],
-      };
+      order = customerOrder(imported.source);
     } catch (err) {
       if (id !== request) return;
       status.textContent = err instanceof Error ? err.message : String(err);
       return;
     }
   } else {
-    order = {
-      schemaVersion: ORDER_SCHEMA_VERSION,
-      generatorVersion: GENERATOR_VERSION,
-      source: { kind: 'text', text, fontId: fontInput.value },
-      heightMm,
-      color: color.value,
-      params: { WALL: wallMm() },
-      paths: edited?.paths ?? null,
-      crossings: edited?.crossings ?? [],
-    };
+    order = customerOrder({ kind: 'text', text, fontId: fontInput.value });
   }
   status.textContent = 'Generazione…';
   const label = fileLabel();
@@ -386,6 +848,10 @@ async function showSign(): Promise<void> {
         label,
         heightMm,
         diffuserOn: withDiffuser,
+        plate:
+          result.plate && result.plateMesh
+            ? { stl: meshToStl(result.plateMesh, 'fondale'), svg: plateToSvg(result.plate) }
+            : null,
       };
       downloadButton.disabled = false;
       downloadButton.textContent = copy.buttons.downloadCustomerStl;
@@ -397,14 +863,30 @@ async function showSign(): Promise<void> {
       diffuser: result.diffuserMesh,
       lights: result.lightPoints,
       ledGapMm: result.ledGapMm,
+      plate: result.plate && result.plateMesh ? { mesh: result.plateMesh, material: result.plate.choice.material } : null,
     });
+    if (result.plate) {
+      plateSize.hidden = false;
+      plateSize.textContent = `Lastra ${cmLabel(result.plate.widthMm).replace(' cm', '')} × ${cmLabel(result.plate.heightMm)}, ${result.plate.holes.length} fori.`;
+    } else {
+      plateSize.hidden = true;
+    }
     scene.setColor(color.value);
+    showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
+    const blocking = result.warnings.find(
+      (warning) =>
+        warning.includes('curva troppo stretta') ||
+        warning.includes('sotto il passo di taglio') ||
+        warning.startsWith('Sagome che si fondono'),
+    );
+    blockReason = blocking ?? '';
     workerBlocked = blocksSubmit(result.warnings);
     updateSubmit();
+    if (shell.dataset.sheet === 'request') renderSummary();
     const leds = result.lightPoints.length > 0 ? `${result.lightPoints.length} LED` : 'Nessun LED sulla striscia.';
     const shown = result.warnings.filter((warning) => {
-      if (/bassa risoluzione|tratto non uniforme|^Puntino|^Trattino fuori/.test(warning)) return true;
+      if (/bassa risoluzione|tratto non uniforme|^Puntino troppo piccolo|^Puntino non|^Trattino fuori/.test(warning)) return true;
       return image && warning.startsWith('Sagome che si fondono');
     });
     const extra = [...notes, ...shown].join(' ');
@@ -420,12 +902,16 @@ const schedule = (): void => {
   window.clearTimeout(timer);
   timer = window.setTimeout(() => void showSign(), 350);
 };
+// Con tutte le sezioni aperte non c'è più «aprire Testo»: è il campo del testo a riportare la sorgente al testo.
+textInput.addEventListener('focus', () => selectKind('text'));
 textInput.addEventListener('input', () => {
+  syncFontSamples();
   if (!keepOrDrop(textInput.value !== sourceMemory.text)) return;
   invalidateStl();
   schedule();
 });
 fontInput.addEventListener('change', () => {
+  syncFontSamples();
   if (!keepOrDrop(fontInput.value !== sourceMemory.font)) return;
   void showSign();
 });
@@ -464,12 +950,17 @@ imageInput.addEventListener('change', () => {
     imageInput.value = '';
     return;
   }
+  const imageRadio = document.querySelector<HTMLInputElement>('input[name="sourceKind"][value="image"]');
+  if (imageRadio) imageRadio.checked = true;
   void loadImage(file);
 });
 heightInput.addEventListener('change', () => {
   const next = Number(heightInput.value);
-  if (edited && next > 0 && heightAtEdit > 0 && Math.abs(next - heightAtEdit) > 1e-9) {
-    const factor = next / heightAtEdit;
+  const clamped = Math.min(HEIGHT_MAX_MM, Math.max(HEIGHT_MIN_MM, Number.isFinite(next) ? next : 120));
+  if (clamped !== next) heightInput.value = String(clamped);
+  syncSizeChips();
+  if (edited && clamped > 0 && heightAtEdit > 0 && Math.abs(clamped - heightAtEdit) > 1e-9) {
+    const factor = clamped / heightAtEdit;
     edited = {
       paths: scalePaths(edited.paths, factor),
       crossings: edited.crossings.map((crossing) => ({
@@ -477,18 +968,91 @@ heightInput.addEventListener('change', () => {
         under: crossing.under,
       })),
     };
-    heightAtEdit = next;
+    heightAtEdit = clamped;
     editor?.load(edited.paths, edited.crossings);
-  } else if (next > 0) {
-    heightAtEdit = next;
+  } else if (clamped > 0) {
+    heightAtEdit = clamped;
   }
   void showSign();
 });
+for (const chip of document.querySelectorAll<HTMLButtonElement>('.size-chip')) {
+  chip.addEventListener('click', () => {
+    const mm = chip.dataset.size;
+    if (!mm) return;
+    heightInput.value = mm;
+    heightInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-height-step]')) {
+  button.addEventListener('click', () => {
+    const delta = Number(button.dataset.heightStep);
+    const current = Number(heightInput.value);
+    const base = Number.isFinite(current) ? current : 120;
+    const next = Math.min(HEIGHT_MAX_MM, Math.max(HEIGHT_MIN_MM, Math.round(base + delta)));
+    heightInput.value = String(next);
+    heightInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 wallInput.addEventListener('input', schedule);
 wallInput.addEventListener('change', () => {
   wallInput.value = wallMm().toFixed(1);
   void showSign();
 });
+
+/** L'asola è larga quanto il canale (SPEC §3) finché non la si cambia a mano. */
+let lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+function onTechChange(): void {
+  const channel = techNumberInputs.get('CHANNEL_W')!;
+  const slot = techNumberInputs.get('WIRE_SLOT_W')!;
+  if (channel.value !== lastChannelW) {
+    if (slot.value === lastChannelW) slot.value = channel.value;
+    lastChannelW = channel.value;
+  }
+  for (const field of TECH_FIELDS) {
+    const input = techNumberInputs.get(field.key)!;
+    input.setAttribute('aria-invalid', techFieldInvalid(field, input.value) ? 'true' : 'false');
+  }
+  invalidateStl();
+  schedule();
+}
+for (const input of techNumberInputs.values()) input.addEventListener('input', onTechChange);
+techProfileInput.addEventListener('change', onTechChange);
+techDensityInput.addEventListener('change', onTechChange);
+for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateShape"], input[name="plateMaterial"]')) {
+  input.addEventListener('change', () => {
+    syncPlateFields();
+    invalidateStl();
+    void showSign();
+  });
+}
+for (const input of [plateMarginInput, plateCornerInput]) {
+  input.addEventListener('input', () => {
+    invalidateStl();
+    schedule();
+  });
+}
+plateMarginInput.addEventListener('change', () => {
+  plateMarginInput.value = String(clampMargin(Number(plateMarginInput.value)));
+});
+plateCornerInput.addEventListener('change', () => {
+  plateCornerInput.value = String(clampCornerR(Number(plateCornerInput.value)));
+});
+syncPlateFields();
+techReset.addEventListener('click', () => {
+  for (const field of TECH_FIELDS) techNumberInputs.get(field.key)!.value = String(DEFAULT_PARAMS[field.key]);
+  techProfileInput.value = DEFAULT_PARAMS.EDGE_PROFILE;
+  techDensityInput.value = String(DEFAULT_LED_DENSITY);
+  lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+  onTechChange();
+});
+for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
+  card.addEventListener('click', () => {
+    const id = card.dataset.font;
+    if (!id || fontInput.value === id) return;
+    fontInput.value = id;
+    fontInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 
 function isSvgFile(file: File): boolean {
   const name = file.name.toLowerCase();
@@ -511,6 +1075,7 @@ async function loadImage(file: File): Promise<void> {
   raster = null;
   if (file.size > IMAGE_MAX_BYTES) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = 'Il file supera 10 MB.';
     return;
   }
@@ -522,6 +1087,7 @@ async function loadImage(file: File): Promise<void> {
   }
   if (!isRasterFile(file)) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = 'Carica un file SVG, PNG o JPG.';
     return;
   }
@@ -540,6 +1106,7 @@ async function loadImage(file: File): Promise<void> {
     void showSign();
   } catch (err) {
     syncSourceFields();
+    showSupply(null);
     status.textContent = err instanceof Error ? err.message : String(err);
   }
 }
@@ -554,6 +1121,30 @@ submitButton.addEventListener('click', () => {
   if (submitButton.disabled) return;
   status.dataset.sent = 'true';
 });
+backToText.addEventListener('click', () => {
+  selectKind('text');
+  openSheet('text');
+});
+sheetClose.addEventListener('click', () => closeSheet());
+openRequest.addEventListener('click', () => toggleSheet('request'));
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+  button.addEventListener('click', () => {
+    const tool = button.dataset.tool;
+    if (tool) toggleSheet(tool);
+  });
+}
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const target = event.target;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
+  if (shell.dataset.sheet === 'config' && editorCanvas.dataset.open === 'true') return;
+  if (!shell.dataset.sheet) return;
+  if (isDesktop() && shell.dataset.sheet !== 'request') return;
+  closeSheet();
+});
+desktop.addEventListener('change', () => {
+  if (isDesktop() && !shell.dataset.sheet) openSheet('text');
+});
 
 async function openEditor(): Promise<void> {
   if (sourceSegments.length === 0 && !edited) return;
@@ -564,7 +1155,7 @@ async function openEditor(): Promise<void> {
     editor = await openPathEditor({
       canvas: editorCanvas,
       toolbar: editorToolbar,
-      getParams: () => resolveParams({ WALL: wallMm() }),
+      getParams: () => resolveParams(orderParams()),
       onCommit(paths, crossings) {
         edited = { paths, crossings };
         restoreButton.disabled = false;
@@ -602,4 +1193,19 @@ async function openEditor(): Promise<void> {
   }
 }
 
+void (async () => {
+  await Promise.all(
+    FONTS.filter((font) => font.kind === 'outline').map(async (font) => {
+      try {
+        const face = new FontFace(font.id, `url(${import.meta.env.BASE_URL}${font.file})`);
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        // Senza il file resta il font di sistema. Le miniature dei tratti singoli sono v1.1.
+      }
+    }),
+  );
+})();
+
+if (isDesktop()) openSheet('text');
 void showSign();

@@ -100,6 +100,56 @@ describe('altezza minima', () => {
     expect(two.issues.some((issue) => issue.message.startsWith('Sagome che si fondono'))).toBe(false);
   });
 
+  it('una giunzione a T non è una sagoma fusa e non blocca l\'altezza', () => {
+    const model = buildStrip(
+      {
+        nodes: [
+          { id: 0, x: 0, y: 0, degree: 1 },
+          { id: 1, x: 50, y: 0, degree: 3 },
+          { id: 2, x: 100, y: 0, degree: 1 },
+          { id: 3, x: 50, y: 60, degree: 1 },
+        ],
+        edges: [
+          { id: 0, a: 0, b: 1, points: [[0, 0], [50, 0]], lengthMm: 50 },
+          { id: 1, a: 1, b: 2, points: [[50, 0], [100, 0]], lengthMm: 50 },
+          { id: 2, a: 1, b: 3, points: [[50, 0], [50, 60]], lengthMm: 60 },
+        ],
+      },
+      DEFAULT_PARAMS,
+      100,
+    );
+    expect(model.chains.length).toBe(2);
+    expect(model.issues.some((issue) => issue.message.startsWith('Sagome che si fondono'))).toBe(false);
+    expect(model.suggestion.heightMm).toBeLessThan(100);
+  });
+
+  it('una T stretta si fonde oltre il contatto, e la scala la separa', () => {
+    // Il ramo parte dalla T a 10° dall'asta: lontano dal contatto i due tratti restano vicini.
+    const deg = (10 * Math.PI) / 180;
+    const tip: Point = [50 + 80 * Math.cos(deg), 80 * Math.sin(deg)];
+    const model = buildStrip(
+      {
+        nodes: [
+          { id: 0, x: 0, y: 0, degree: 1 },
+          { id: 1, x: 50, y: 0, degree: 3 },
+          { id: 2, x: 150, y: 0, degree: 1 },
+          { id: 3, x: tip[0], y: tip[1], degree: 1 },
+        ],
+        edges: [
+          { id: 0, a: 0, b: 1, points: [[0, 0], [50, 0]], lengthMm: 50 },
+          { id: 1, a: 1, b: 2, points: [[50, 0], [150, 0]], lengthMm: 100 },
+          { id: 2, a: 1, b: 3, points: [[50, 0], tip], lengthMm: 80 },
+        ],
+      },
+      DEFAULT_PARAMS,
+      100,
+    );
+    const issue = model.issues.find((item) => item.message.startsWith('Sagome che si fondono'));
+    expect(issue).toBeTruthy();
+    expect(model.suggestion.heightMm).toBeGreaterThan(100);
+    expect(model.suggestion.heightMm).toBeLessThan(2000);
+  });
+
   it('una U sulla stessa linea è due pareti e alza l\'altezza', () => {
     const model = buildStrip(
       sourceFromPaths([{ points: [[0, 0], [40, 0], [40, 8], [0, 8]] }]),

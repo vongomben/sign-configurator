@@ -255,6 +255,61 @@ function legsDiverge(ja: Point, pa: Point, jb: Point, pb: Point, deg: number): b
   return angle >= deg;
 }
 
+/** Un capo entro questa distanza da un altro tratto lo tocca: è una giunzione a T, non una fusione. */
+const TOUCH_TOL = 0.5;
+
+function nearestOnPolyline(p: Point, points: readonly Point[]): { d: number; s: number } {
+  let best = { d: Infinity, s: 0 };
+  let s = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    const len = Math.sqrt(len2);
+    const t = len2 > 1e-12 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+    const d = Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+    if (d < best.d) best = { d, s: s + t * len };
+    s += len;
+  }
+  return best;
+}
+
+/**
+ * Capi aperti che finiscono su un altro tratto, o sullo stesso lontano dal capo:
+ * le giunzioni a T del grafo (§5 [D], nodi grado 3). Lì le sagome si toccano per
+ * disegno, come a un incrocio, e la scala non le separa. Va chiamata sulle linee
+ * prima della levigatura, dove il capo sta esattamente sull'altro tratto.
+ */
+export function touchPoints(
+  lines: readonly ClearanceLine[],
+  params: Pick<Params, 'CHANNEL_W' | 'WALL' | 'MIN_GAP'>,
+): Point[] {
+  const limit = params.CHANNEL_W + 2 * params.WALL + params.MIN_GAP;
+  const out: Point[] = [];
+  lines.forEach((line, index) => {
+    const pts = line.points;
+    if (line.closed === true || pts.length < 2) return;
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i]![0] - pts[i - 1]![0], pts[i]![1] - pts[i - 1]![1]);
+    for (const [end, s] of [
+      [pts[0]!, 0],
+      [pts[pts.length - 1]!, length],
+    ] as const) {
+      const touches = lines.some((other, j) => {
+        if (other.points.length < 2) return false;
+        const hit = nearestOnPolyline(end, other.points);
+        if (hit.d > TOUCH_TOL) return false;
+        if (j !== index) return true;
+        return Math.abs(hit.s - s) > limit;
+      });
+      if (touches) out.push([end[0], end[1]]);
+    }
+  });
+  return out;
+}
+
 /**
  * Due tratti non contigui della linea centrale più vicini di
  * CHANNEL_W + 2·WALL + MIN_GAP: le sagome si fondono.

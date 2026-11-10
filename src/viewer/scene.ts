@@ -24,12 +24,14 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { StlMesh } from '../export/stl';
 import type { LightPoint } from '../geometry/lights';
+import type { PlateMaterial } from '../geometry/plate';
 import {
   createDiffuserGlowMaterial,
   createEmitterMaterial,
@@ -51,6 +53,8 @@ export interface SignViewData {
   lights: readonly LightPoint[];
   /** Distanza LED–diffusore, mm. Larghezza della gaussiana. */
   ledGapMm: number;
+  /** Fondale dietro l'housing (SPEC §13), con il suo materiale. Assente: nessun fondale. */
+  plate?: { mesh: StlMesh; material: PlateMaterial } | null;
 }
 
 export interface SignScene {
@@ -67,7 +71,13 @@ export interface SignScene {
 }
 
 const FRONT_LIMIT = (40 * Math.PI) / 180;
+/** Oltre quest'angolo fra due facce lo spigolo resta vivo nell'ombreggiatura. */
+const CREASE_ANGLE = (35 * Math.PI) / 180;
 const WALL = 0xe6e0d6;
+
+function cssHex(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
 
 function coarsePointer(): boolean {
   return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 720px)').matches;
@@ -85,18 +95,22 @@ function geometryOf(mesh: StlMesh): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setIndex(new BufferAttribute(mesh.triVerts, 1));
-  geometry.computeVertexNormals();
-  return geometry;
+  // Normali a spigolo: le pareti curve restano morbide, le facce piane (cima del diffusore, bordo,
+  // lastra) restano piane invece di sfumare a ventaglio verso i vertici condivisi con le pareti.
+  const creased = toCreasedNormals(geometry, CREASE_ANGLE);
+  geometry.dispose();
+  return creased;
 }
 
-export function mountSignScene(host: HTMLElement): SignScene {
+export function mountSignScene(host: HTMLElement, options?: { background?: number }): SignScene {
   const mobile = coarsePointer();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const backdrop = options?.background ?? WALL;
 
   host.replaceChildren();
   host.style.position = 'relative';
   host.style.minHeight = '70vh';
-  host.style.background = '#e6e0d6';
+  host.style.background = cssHex(backdrop);
   host.style.overflow = 'hidden';
 
   const renderer = new WebGLRenderer({ antialias: !mobile, alpha: false, powerPreference: 'high-performance' });
@@ -111,7 +125,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
   host.appendChild(renderer.domElement);
 
   const scene = new Scene();
-  scene.background = new Color(WALL);
+  scene.background = new Color(backdrop);
 
   const daylight = new HemisphereLight(0xfff6ea, 0xc9c2b6, 0.85);
   const sun = new DirectionalLight(0xfffaf3, 1.15);
@@ -149,6 +163,35 @@ export function mountSignScene(host: HTMLElement): SignScene {
     side: DoubleSide,
   });
   const diffuserOff = new MeshStandardMaterial({ color: 0xf7f4ef, roughness: 0.94, metalness: 0, side: DoubleSide });
+  // Fondale: plexi nero trasparente (fumé lucido, si vede il muro dietro) o legno opaco.
+  const plateMaterials: Record<PlateMaterial, MeshStandardMaterial> = {
+    // Plexi trasparente: quasi invisibile, lucido; si vedono fori e fili dietro.
+    clear: new MeshStandardMaterial({
+      color: 0xc8d4de,
+      roughness: 0.04,
+      metalness: 0.25,
+      transparent: true,
+      opacity: 0.1,
+      depthWrite: false,
+      side: DoubleSide,
+      emissive: 0xffffff,
+    }),
+    // Plexi nero trasparente (fumé).
+    black: new MeshStandardMaterial({
+      // Sullo sfondo nero del cliente un nero pieno sparirebbe: un grigio fumé lucido lo stacca.
+      color: 0x3a3a48,
+      roughness: 0.16,
+      metalness: 0.4,
+      transparent: true,
+      opacity: 0.8,
+      // Il bagliore del neon sulla lastra: il plexi lucido lo riflette, un po' smorzato.
+      emissive: 0xb4b4c8,
+      depthWrite: false,
+      side: DoubleSide,
+    }),
+    // Il legno opaco diffonde il bagliore in caldo.
+    wood: new MeshStandardMaterial({ color: 0xa2713f, roughness: 0.82, metalness: 0, side: DoubleSide, emissive: 0xffd2a0 }),
+  };
 
   const glowTarget = new WebGLRenderTarget(128, 128, { type: HalfFloatType, depthBuffer: false });
   glowTarget.texture.generateMipmaps = false;
@@ -161,7 +204,12 @@ export function mountSignScene(host: HTMLElement): SignScene {
   splat.frustumCulled = false;
   glowScene.add(splat);
   const glowMaterial = createDiffuserGlowMaterial(glowTarget.texture);
-  const wallMaterial = createWallGlowMaterial(glowTarget.texture, new Color(WALL));
+  // La lastra sta davanti al muro e ne coprirebbe il bagliore: lo riceve lei, dalla stessa texture.
+  for (const material of Object.values(plateMaterials)) {
+    material.emissiveMap = glowTarget.texture;
+    material.emissiveIntensity = 0;
+  }
+  const wallMaterial = createWallGlowMaterial(glowTarget.texture, new Color(backdrop));
   wall.material = wallMaterial;
   const emitterMaterial = createEmitterMaterial();
   const emitters = new Points(ledGeometry, emitterMaterial);
@@ -171,6 +219,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
 
   let housingMesh: Mesh | null = null;
   let diffuserMesh: Mesh | null = null;
+  let plateMesh: Mesh | null = null;
   let lights: readonly LightPoint[] = [];
   let ledGap = 6;
   let mode: PreviewMode = 'accesa';
@@ -182,6 +231,71 @@ export function mountSignScene(host: HTMLElement): SignScene {
 
   const rainbowOn = (): boolean => rainbowAsked;
 
+  // Dichiarati prima di resize(): l'observer chiama resize subito, a insegna ancora assente.
+  let viewBox: Box3 | null = null;
+
+  const fitDistance = (size: Vector3): number => {
+    const tan = Math.tan((camera.fov * Math.PI) / 360);
+    const aspect = Math.max(camera.aspect, 0.2);
+    const distForHeight = Math.max(size.y, 1) / 2 / tan;
+    const distForWidth = Math.max(size.x, 1) / 2 / (tan * aspect);
+    return Math.max(distForHeight, distForWidth, 40) * 1.28;
+  };
+
+  const aimCamera = (box: Box3, resetAngle: boolean): void => {
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const distance = fitDistance(size);
+    controls.target.copy(center);
+    if (resetAngle) {
+      controls.minAzimuthAngle = -Infinity;
+      controls.maxAzimuthAngle = Infinity;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
+      camera.position.set(center.x, center.y, center.z + distance);
+    } else {
+      const offset = new Vector3().subVectors(camera.position, center);
+      if (offset.lengthSq() < 1) offset.set(0, 0, 1);
+      offset.setLength(distance);
+      camera.position.copy(center).add(offset);
+    }
+    camera.near = Math.max(0.1, distance / 200);
+    camera.far = Math.max(distance * 30, 100);
+    camera.updateProjectionMatrix();
+    controls.update();
+    if (!resetAngle) return;
+    const azimuth = controls.getAzimuthalAngle();
+    const polar = controls.getPolarAngle();
+    controls.minAzimuthAngle = azimuth - FRONT_LIMIT;
+    controls.maxAzimuthAngle = azimuth + FRONT_LIMIT;
+    controls.minPolarAngle = Math.max(0.05, polar - FRONT_LIMIT);
+    controls.maxPolarAngle = Math.min(Math.PI - 0.05, polar + FRONT_LIMIT);
+  };
+
+  const frame = (box: Box3): void => {
+    viewBox = box.clone();
+    aimCamera(box, true);
+
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const span = Math.max(size.x, size.y, 40);
+    wall.geometry.dispose();
+    const plane = new BufferGeometry();
+    const z = box.min.z - 12;
+    const w = span * 4;
+    const positions = new Float32Array([
+      center.x - w, center.y - w, z,
+      center.x + w, center.y - w, z,
+      center.x + w, center.y + w, z,
+      center.x - w, center.y - w, z,
+      center.x + w, center.y + w, z,
+      center.x - w, center.y + w, z,
+    ]);
+    plane.setAttribute('position', new BufferAttribute(positions, 3));
+    plane.computeVertexNormals();
+    wall.geometry = plane;
+  };
+
   const resize = (): void => {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, Math.round(host.clientHeight || window.innerHeight * 0.7));
@@ -190,6 +304,7 @@ export function mountSignScene(host: HTMLElement): SignScene {
     bloom.setSize(Math.max(1, Math.floor(width * bloomScale)), Math.max(1, Math.floor(height * bloomScale)));
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    if (viewBox) aimCamera(viewBox, false);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(host);
@@ -203,13 +318,19 @@ export function mountSignScene(host: HTMLElement): SignScene {
       diffuserMesh.material = on ? glowMaterial : diffuserOff;
     }
     emitters.visible = open && lights.length > 0;
-    daylight.intensity = on || open ? 0.22 : 0.9;
-    sun.intensity = on || open ? 0.28 : 1.15;
+    // Con un fondale la stanza resta un po' più chiara, altrimenti la lastra sparisce nel nero.
+    const room = plateMesh ? 3 : 1;
+    daylight.intensity = on || open ? 0.22 * room : 0.9;
+    sun.intensity = on || open ? 0.28 * room : 1.15;
     bloom.threshold = BLOOM_THRESHOLD;
     bloom.radius = haloRadius;
     bloom.strength = on || open ? haloRadius * 0.35 : 0;
     const spread = DEFAULT_HALO > 0 ? haloRadius / DEFAULT_HALO : 0;
     wallMaterial.uniforms.uGain!.value = on ? WALL_GLOW_GAIN * spread : 0;
+    const plateGlow = on ? WALL_GLOW_GAIN * spread : 0;
+    plateMaterials.wood.emissiveIntensity = plateGlow * 0.9;
+    plateMaterials.black.emissiveIntensity = plateGlow * 0.85;
+    plateMaterials.clear.emissiveIntensity = plateGlow * 0.5;
     bloom.enabled = on || open;
   };
 
@@ -240,6 +361,19 @@ export function mountSignScene(host: HTMLElement): SignScene {
     wallMaterial.uniforms.uSpan!.value.set(worldW, worldH);
     emitterMaterial.uniforms.uPointSize!.value = Math.max(6, 2.2 * pixelsPerMm);
     void span;
+  };
+
+  /** Coordinate della texture del bagliore sulla lastra: le stesse del muro, dal piano XY. */
+  const plateGlowUv = (geometry: BufferGeometry): void => {
+    const origin = wallMaterial.uniforms.uOrigin!.value as Vector2;
+    const span = wallMaterial.uniforms.uSpan!.value as Vector2;
+    const pos = geometry.getAttribute('position');
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = (pos.getX(i) - origin.x) / span.x;
+      uv[i * 2 + 1] = (pos.getY(i) - origin.y) / span.y;
+    }
+    geometry.setAttribute('uv', new BufferAttribute(uv, 2));
   };
 
   const paintColors = (time: number): void => {
@@ -274,44 +408,6 @@ export function mountSignScene(host: HTMLElement): SignScene {
     renderer.render(glowScene, glowCamera);
     renderer.setRenderTarget(previous);
     renderer.autoClear = autoClear;
-  };
-
-  const frame = (box: Box3): void => {
-    const center = box.getCenter(new Vector3());
-    const size = box.getSize(new Vector3());
-    const span = Math.max(size.x, size.y, 40);
-    controls.minAzimuthAngle = -Infinity;
-    controls.maxAzimuthAngle = Infinity;
-    controls.minPolarAngle = 0;
-    controls.maxPolarAngle = Math.PI;
-    controls.target.copy(center);
-    camera.position.set(center.x, center.y, center.z + span * 1.35);
-    camera.near = Math.max(0.1, span / 200);
-    camera.far = span * 30;
-    camera.updateProjectionMatrix();
-    controls.update();
-    const azimuth = controls.getAzimuthalAngle();
-    const polar = controls.getPolarAngle();
-    controls.minAzimuthAngle = azimuth - FRONT_LIMIT;
-    controls.maxAzimuthAngle = azimuth + FRONT_LIMIT;
-    controls.minPolarAngle = Math.max(0.05, polar - FRONT_LIMIT);
-    controls.maxPolarAngle = Math.min(Math.PI - 0.05, polar + FRONT_LIMIT);
-
-    wall.geometry.dispose();
-    const plane = new BufferGeometry();
-    const z = box.min.z - 12;
-    const w = span * 4;
-    const positions = new Float32Array([
-      center.x - w, center.y - w, z,
-      center.x + w, center.y - w, z,
-      center.x + w, center.y + w, z,
-      center.x - w, center.y - w, z,
-      center.x + w, center.y + w, z,
-      center.x - w, center.y + w, z,
-    ]);
-    plane.setAttribute('position', new BufferAttribute(positions, 3));
-    plane.computeVertexNormals();
-    wall.geometry = plane;
   };
 
   const setLights = (next: readonly LightPoint[]): void => {
@@ -358,15 +454,30 @@ export function mountSignScene(host: HTMLElement): SignScene {
       diffuserMesh?.geometry.dispose();
       if (housingMesh) scene.remove(housingMesh);
       if (diffuserMesh) scene.remove(diffuserMesh);
+      if (plateMesh) {
+        scene.remove(plateMesh);
+        plateMesh.geometry.dispose();
+        plateMesh = null;
+      }
       ledGap = Math.max(0.4, sign.ledGapMm);
       housingMesh = new Mesh(geometryOf(sign.housing), housingMaterial);
       diffuserMesh = new Mesh(geometryOf(sign.diffuser), diffuserOff);
       scene.add(housingMesh, diffuserMesh);
+      if (sign.plate) {
+        // Facce piane: normali per faccia, altrimenti la faccia grande si sfuma verso i bordi e
+        // mostra i triangoli lunghi della triangolazione.
+        plateMesh = new Mesh(geometryOf(sign.plate.mesh), plateMaterials[sign.plate.material]);
+        plateMesh.renderOrder = -1;
+        scene.add(plateMesh);
+      }
       setLights(sign.lights);
       const box = new Box3().setFromObject(housingMesh);
       if (box.isEmpty()) box.set(new Vector3(-10, -10, 0), new Vector3(10, 10, 12));
       layoutGlow(box);
-      frame(box);
+      if (plateMesh) plateGlowUv(plateMesh.geometry);
+      // L'inquadratura comprende il fondale; il bagliore resta calcolato sull'insegna.
+      const view = plateMesh ? box.clone().union(new Box3().setFromObject(plateMesh)) : box;
+      frame(view);
       applyMode();
       paintColors(0);
       renderGlow();
@@ -400,9 +511,13 @@ export function mountSignScene(host: HTMLElement): SignScene {
       controls.dispose();
       housingMesh?.geometry.dispose();
       diffuserMesh?.geometry.dispose();
+      plateMesh?.geometry.dispose();
       splat.geometry.dispose();
       housingMaterial.dispose();
       diffuserOff.dispose();
+      plateMaterials.clear.dispose();
+      plateMaterials.black.dispose();
+      plateMaterials.wood.dispose();
       splatMaterial.dispose();
       glowMaterial.dispose();
       wallMaterial.dispose();

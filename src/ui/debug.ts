@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, type CuspMode, type IDotMode } from '../config';
-import type { RasterImageSource, SignOrder, SvgImageSource, TraceMode } from '../order/schema';
+import { DEFAULT_CUSTOMER, type OrderSource, type RasterImageSource, type SignOrderV4, type SvgImageSource, type TraceMode } from '../order/schema';
 import { layoutRaster } from '../sources/bitmapCodec';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
@@ -731,7 +731,7 @@ const solidPreview = (() => {
   };
 })();
 
-async function previewSolid(id: number, order: SignOrder, label = ''): Promise<void> {
+async function previewSolid(id: number, order: SignOrderV4, label = ''): Promise<void> {
   downloadHousing.disabled = true;
   downloadDiffuser.disabled = true;
   housingStl = null;
@@ -794,17 +794,33 @@ function syncSourceFields(): void {
   if (caption) caption.textContent = image ? 'Copertura per regione' : 'Copertura per lettera';
 }
 
-function textOrder(input: RasterizeInput, cuspMode: CuspMode, iDotMode: IDotMode): SignOrder {
+function geometryOrder(
+  source: OrderSource,
+  heightMm: number,
+  params: SignOrderV4['params'],
+): SignOrderV4 {
   return {
     schemaVersion: ORDER_SCHEMA_VERSION,
     generatorVersion: GENERATOR_VERSION,
-    source: { kind: 'text', text: input.text, fontId: input.fontId },
-    heightMm: input.heightMm,
+    pricingVersion: null,
+    source,
+    heightMm,
+    sizePreset: null,
     color: '#9aa3ad',
-    params: { CUSP_MODE: cuspMode, I_DOT_MODE: iDotMode },
+    params,
     paths: null,
     crossings: [],
+    customer: { ...DEFAULT_CUSTOMER },
+    plate: null,
   };
+}
+
+function textOrder(input: RasterizeInput, cuspMode: CuspMode, iDotMode: IDotMode): SignOrderV4 {
+  return geometryOrder(
+    { kind: 'text', text: input.text, fontId: input.fontId },
+    input.heightMm,
+    { CUSP_MODE: cuspMode, I_DOT_MODE: iDotMode },
+  );
 }
 
 let runId = 0;
@@ -820,7 +836,7 @@ async function run(): Promise<void> {
     let strip: StripModel;
     let graphMs: number;
     let same: boolean;
-    let order: SignOrder;
+    let order: SignOrderV4;
     let extraWarnings: string[] = [];
     let solidLabel = '';
     if (image) {
@@ -871,16 +887,7 @@ async function run(): Promise<void> {
         source = built.source;
         extraWarnings = imageLoad.warnings;
       }
-      order = {
-        schemaVersion: ORDER_SCHEMA_VERSION,
-        generatorVersion: GENERATOR_VERSION,
-        source,
-        heightMm: input.heightMm,
-        color: '#9aa3ad',
-        params: { CUSP_MODE: cuspMode, I_DOT_MODE: iDotMode },
-        paths: null,
-        crossings: [],
-      };
+      order = geometryOrder(source, input.heightMm, { CUSP_MODE: cuspMode, I_DOT_MODE: iDotMode });
       solidLabel = imageLoad.name;
       const local = source.format === 'svg' ? layoutSvg(source, input.heightMm, input.pxPerMm) : layoutRaster(source, input.heightMm);
       const remote =
