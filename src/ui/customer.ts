@@ -1,6 +1,6 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
-import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
+import { CONTROLLER, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
 import { PRICING_VERSION } from '../pricing';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
@@ -34,7 +34,7 @@ import {
 } from '../geometry/plate';
 import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
-import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
+import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -110,6 +110,12 @@ const techGroups = TECH_GROUPS.map((group) => `
       <span>Densità dei LED <small>LED_PER_M</small></span>
       <select name="tech-LED_PER_M">
         ${ledDensityOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+    </label>
+    <label class="tech-field">
+      <span>Tensione della striscia <small>STRIP_V</small></span>
+      <select name="tech-STRIP_V">
+        ${voltageOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>` : ''}
     ${group.title === 'Bordi' ? `
@@ -370,13 +376,14 @@ const techNumberInputs = new Map<TechNumericKey, HTMLInputElement>(
 );
 const techProfileInput = document.querySelector<HTMLSelectElement>('select[name="tech-EDGE_PROFILE"]')!;
 const techDensityInput = document.querySelector<HTMLSelectElement>('select[name="tech-LED_PER_M"]')!;
+const techVoltageInput = document.querySelector<HTMLSelectElement>('select[name="tech-STRIP_V"]')!;
 const techReset = document.querySelector<HTMLButtonElement>('#tech-reset')!;
 
 /** Override dell'ordine: la cornice dalla barra, il resto dallo strumento Tecnica. */
 function orderParams(): Partial<Params> {
   const numbers: Partial<Record<TechNumericKey, string>> = {};
   for (const [key, input] of techNumberInputs) numbers[key] = input.value;
-  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value }) };
+  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value, stripV: techVoltageInput.value }) };
 }
 
 const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMarginMm"]')!;
@@ -473,6 +480,11 @@ function renderSummary(): void {
     if (value !== undefined) rows.push([field.label, `${value} ${field.unit}`]);
   }
   if (overrides.LED_PER_M) rows.push(['Densità dei LED', `${overrides.LED_PER_M} LED/m`]);
+  rows.push(['Controller', `${CONTROLLER.name} (${CONTROLLER.model})`]);
+  if (lastPower) {
+    rows.push(['Alimentatore', `${lastPower.voltageV} V · ${lastPower.supplyA} A`]);
+    for (const warning of lastPower.warnings) rows.push(['Attenzione', warning]);
+  }
   if (overrides.EDGE_PROFILE) {
     rows.push(['Profilo', EDGE_PROFILES.find((p) => p.value === overrides.EDGE_PROFILE)?.label ?? overrides.EDGE_PROFILE]);
   }
@@ -754,15 +766,28 @@ function saveStl(name: string, buffer: ArrayBuffer | string, type = 'model/stl')
 }
 
 /** Pillola in basso a destra: alimentatore a 5 V, se la distinta lo conosce. */
-function showSupply(bom: { assembly?: { supplyA?: number } } | null): void {
+/** Alimentatore consigliato e limiti del controller, dall'ultima generazione. */
+let lastPower: { voltageV: number; supplyA: number; warnings: string[] } | null = null;
+
+/** Pillola in basso a destra: tensione e ampere dell'alimentatore, rossa oltre i limiti del controller. */
+function showSupply(bom: { assembly?: { supplyA?: number; voltageV?: number; controllerWarnings?: string[] } } | null): void {
   const amps = bom?.assembly?.supplyA ?? 0;
   if (!(amps > 0)) {
+    lastPower = null;
     supply.hidden = true;
     supply.textContent = '';
+    supply.classList.remove('is-over');
+    supply.removeAttribute('title');
     return;
   }
+  const volts = bom?.assembly?.voltageV ?? DEFAULT_PARAMS.STRIP_V;
+  const warnings = bom?.assembly?.controllerWarnings ?? [];
+  lastPower = { voltageV: volts, supplyA: amps, warnings };
   supply.hidden = false;
-  supply.textContent = `5 V · ${amps} A`;
+  supply.textContent = `${volts} V · ${amps} A`;
+  supply.classList.toggle('is-over', warnings.length > 0);
+  if (warnings.length > 0) supply.title = warnings.join(' ');
+  else supply.removeAttribute('title');
 }
 
 function fileLabel(): string {
@@ -1018,6 +1043,7 @@ function onTechChange(): void {
 for (const input of techNumberInputs.values()) input.addEventListener('input', onTechChange);
 techProfileInput.addEventListener('change', onTechChange);
 techDensityInput.addEventListener('change', onTechChange);
+techVoltageInput.addEventListener('change', onTechChange);
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateShape"], input[name="plateMaterial"]')) {
   input.addEventListener('change', () => {
     syncPlateFields();
@@ -1042,6 +1068,7 @@ techReset.addEventListener('click', () => {
   for (const field of TECH_FIELDS) techNumberInputs.get(field.key)!.value = String(DEFAULT_PARAMS[field.key]);
   techProfileInput.value = DEFAULT_PARAMS.EDGE_PROFILE;
   techDensityInput.value = String(DEFAULT_LED_DENSITY);
+  techVoltageInput.value = String(DEFAULT_PARAMS.STRIP_V);
   lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
   onTechChange();
 });

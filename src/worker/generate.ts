@@ -177,6 +177,7 @@ export async function generateSign(order: AnyOrder, read?: FontBytesReader): Pro
     params,
   });
   warnings.push(...housing.warnings);
+  warnings.push(...(strip.bom.assembly?.controllerWarnings ?? []));
   try {
     const housingMesh = copyMesh(housing.solid.getMesh());
     const diffuserMesh = copyMesh(housing.diffuser.getMesh());

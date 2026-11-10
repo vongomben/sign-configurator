@@ -37,6 +37,25 @@ export const PLATE_KERF: Readonly<Record<keyof typeof PLATE_T, number | null>> =
   wood: null,
 });
 
+/** Tensioni della striscia che il configuratore conosce (SPEC §2). */
+export const STRIP_VOLTAGES: readonly number[] = [5, 12, 24];
+
+/**
+ * Controller montato dietro l'insegna (SPEC §2): GLEDOPTO ESP32 Ultra Mini, GL-C-309WL, WLED.
+ * Dalle schede dei rivenditori: ingresso 5–24 V DC, 10 A, 2 uscite dati, fino a 800 IC.
+ * Il dato «10 A per canale» non torna con i 240 W dichiarati: per prudenza 10 A in totale.
+ * Gli IC si contano come i LED (una striscia a 12 o 24 V con un IC ogni 3 LED ne usa meno).
+ */
+export const CONTROLLER = Object.freeze({
+  name: 'GLEDOPTO ESP32 Ultra Mini',
+  model: 'GL-C-309WL',
+  minV: 5,
+  maxV: 24,
+  maxA: 10,
+  maxIcs: 800,
+  outputs: 2,
+});
+
 /** Pagina cliente: offre il download di housing.stl e, se attivo, diffuser.stl (SPEC §5). */
 export const CUSTOMER_STL_DOWNLOAD = true;
 
@@ -105,8 +124,13 @@ export interface Params {
   HINGE_MAX_DEG: number;
   CUT_PITCH: number;
   LED_PER_M: number;
-  /** Corrente di un LED a bianco pieno, mA. Serve alla stima dell'alimentatore. */
+  /** Corrente di un LED a bianco pieno a 5 V, mA. Serve alla stima dell'alimentatore. */
   LED_MAX_MA: number;
+  /**
+   * Tensione della striscia, V: 5, 12 o 24 (`STRIP_VOLTAGES`). A parità di potenza per LED
+   * la corrente scala come 5 / STRIP_V.
+   */
+  STRIP_V: number;
 
   // Geometria (SPEC §3)
   CHANNEL_W: number;
@@ -166,6 +190,7 @@ export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
   CUT_PITCH: DEFAULT_STRIP.CUT_PITCH,
   LED_PER_M: DEFAULT_STRIP.LED_PER_M,
   LED_MAX_MA: 60,
+  STRIP_V: 5,
 
   CHANNEL_W: DEFAULT_STRIP.CHANNEL_W,
   CHANNEL_DEPTH: 8.0,
