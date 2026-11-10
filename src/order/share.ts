@@ -2,6 +2,7 @@
 
 import {
   GENERATOR_VERSION,
+  STRIP_VOLTAGES,
   PLATE_CORNER_R,
   PLATE_CORNER_R_MAX,
   PLATE_CORNER_R_MIN,
@@ -65,6 +66,7 @@ const NUMERIC_PARAMS = [
   'CUT_PITCH',
   'LED_PER_M',
   'LED_MAX_MA',
+  'STRIP_V',
   'CHANNEL_W',
   'CHANNEL_DEPTH',
   'WALL',
@@ -285,6 +287,11 @@ function paramsOf(value: unknown, warnings: string[]): Partial<Params> {
     const number = finite(value[key]);
     if (number === null) {
       warnings.push(`Parametro ${key} ignorato.`);
+      continue;
+    }
+    if (key === 'STRIP_V') {
+      if (STRIP_VOLTAGES.includes(number)) params.STRIP_V = number;
+      else warnings.push(`Tensione ${number} V sconosciuta: usata quella predefinita.`);
       continue;
     }
     if (key === 'WALL') {

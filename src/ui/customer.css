@@ -258,6 +258,12 @@ select {
   white-space: nowrap;
 }
 
+/* Oltre i limiti del controller (corrente o numero di LED): il motivo sta nel title e in Richiedi. */
+#preview-supply.is-over {
+  background: #b3261e;
+  color: #fff;
+}
+
 .sheet {
   display: flex;
   flex-direction: column;

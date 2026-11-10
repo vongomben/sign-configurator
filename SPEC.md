@@ -30,10 +30,16 @@ Striscia: TOPAI WS2812B COB 5 mm, RGBIC indirizzabile, 160 IC/m, connettori 3 pi
 | `HINGE_MAX_DEG` | 40 | sul pezzo B la striscia segue fino a 45° con leggera tensione; 40° è il margine del generatore |
 | `CUT_PITCH` | 10.0 | passo di taglio (verificare se coincide con gli intagli) |
 | `LED_PER_M` | 160 | |
-| `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno, per la stima a 5 V |
-| Tensione | 5 V | l'annuncio dice anche 24 V: **DA VERIFICARE** |
+| `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno a 5 V, per la stima dell'alimentatore |
+| `STRIP_V` | 5 | tensione della striscia: 5, 12 o 24 V (`STRIP_VOLTAGES`). A parità di potenza per LED la corrente scala come 5 / `STRIP_V` |
 
 Montaggio: striscia **piatta sul fondo del canale, LED verso chi guarda**, piegata di lato sfruttando le cerniere.
+
+Controller (`CONTROLLER` in `src/config.ts`): **GLEDOPTO ESP32 Ultra Mini, GL-C-309WL**, firmware WLED,
+dietro l'insegna. Dalle schede dei rivenditori: ingresso 5–24 V DC, 10 A, 2 uscite dati, fino a 800 IC.
+Un rivenditore dice «10 A per canale» e 240 W, che non tornano fra loro: si usa 10 A in totale finché
+non si verifica sul manuale. Gli IC si contano come i LED (una striscia a 12 o 24 V con un IC ogni
+3 LED ne usa meno).
 
 Raggio minimo derivato dal profilo: `R_MIN = HINGE_PITCH / (2·sin(HINGE_MAX_DEG/2))` (≈ 14,6 mm con 40°).
 Altezza minima di lettera derivata: `MIN_LETTER_H = 2·R_MIN`, il diametro della piega più stretta.
@@ -505,7 +511,8 @@ Layer: `ANCHOR_HOLES` (CIRCLE), `WIRE_SLOTS` (LWPOLYLINE chiusa del contorno rea
   "wireSlotW": 5.4, "wireSlotL": 6,
   "corners": [{ "x": 0, "y": 0, "segments": [1, 2], "wireMm": 0 }],
   "assembly": { "segments": 0, "solderJoints": 0, "wires": 0, "corners": 0,
-                "wireM": 0, "totalLeds": 0, "maxCurrentA": 0, "supplyA": 0 },
+                "wireM": 0, "totalLeds": 0, "voltageV": 5, "maxCurrentA": 0, "supplyA": 0,
+                "controllerWarnings": [] },
   "plate": null,
   "warnings": [] }
 ```
@@ -530,8 +537,13 @@ fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
 - `corners`: giunti d'angolo
 - `wireM`: metri di filo stimati, somma in linea d'aria fra ogni DOUT libero e il DIN libero più vicino, più 0,2 m per ogni capo non accoppiato (alimentazione). I giunti d'angolo valgono 0
 - `totalLeds`
-- `maxCurrentA`: `totalLeds · LED_MAX_MA / 1000` a 5 V, bianco pieno
+- `voltageV`: tensione della striscia e dell'alimentatore (`STRIP_V`)
+- `maxCurrentA`: `totalLeds · LED_MAX_MA / 1000 · 5 / STRIP_V`, bianco pieno
 - `supplyA`: alimentatore consigliato, il minimo intero di ampere che copre la corrente massima con il 25% di margine
+- `controllerWarnings`: avvisi se `supplyA` supera i 10 A del controller (serve iniettare corrente o un
+  secondo controller) o se i LED superano i suoi 800 IC. Non bloccano l'invio; entrano negli avvisi
+  del generatore. Nella pagina cliente la pillola dell'alimentatore («12 V · 4 A») diventa rossa e
+  Richiedi mostra controller, alimentatore e avvisi.
 
 ## 5bis. Editor dei tracciati (`src/editor/`, lato cliente)
 
@@ -873,7 +885,8 @@ Ogni sezione contiene un `.pane[data-pane=…]`; Richiedi è il `.pane[data-pane
   `HINGE_MAX_DEG`), canale (`CHANNEL_W`, `CHANNEL_DEPTH`, `FLOOR`), fili (`WIRE_SLOT_W`,
   `WIRE_SLOT_L`, `SLOT_LIP_CHAMFER`), bordi (`EDGE_PROFILE`, `CHAMFER_SIZE`, `CHAMFER_ANGLE`,
   `LAYER_STEP`).
-  Nella striscia c'è anche la **densità dei LED** (`select name="tech-LED_PER_M"`): solo 30, 60,
+  Nella striscia ci sono anche la **tensione** (`select name="tech-STRIP_V"`: 5, 12, 24 V, predefinita
+  5; nell'ordine solo se diversa) e la **densità dei LED** (`select name="tech-LED_PER_M"`): solo 30, 60,
   74, 96 e 144 LED/m (`LED_DENSITIES` in `techParams.ts`), predefinita 144 (`DEFAULT_LED_DENSITY`).
   Il profilo della striscia in `config.ts` (160, la COB) non è nella scala e vale solo per admin e
   debug: la pagina cliente scrive sempre `LED_PER_M` nell'ordine. Cambia il numero e il passo dei

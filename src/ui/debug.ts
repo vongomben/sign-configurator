@@ -578,7 +578,7 @@ function showBom(bom: Bom): void {
   bomSummary.textContent =
     `${fit.segments} spezzoni · ${fit.solderJoints} saldature (${fit.wires} fili, 3 per collegamento DIN/DOUT) · ` +
     `${fit.corners} giunti d'angolo · filo stimato ${fit.wireM.toFixed(2)} m · ${fit.totalLeds} LED · ` +
-    `corrente max ${fit.maxCurrentA.toFixed(2)} A a 5 V · alimentatore da ${fit.supplyA} A`;
+    `corrente max ${fit.maxCurrentA.toFixed(2)} A a ${fit.voltageV} V · alimentatore da ${fit.supplyA} A`;
   if (bom.segments.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
