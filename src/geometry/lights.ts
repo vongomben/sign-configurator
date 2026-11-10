@@ -21,6 +21,9 @@ export interface LightChain {
   dot?: boolean;
 }
 
+/** Un puntino porta un solo LED, al centro, qualunque sia la sua lunghezza (SPEC §5, I_DOT_MODE «dot»). */
+export const DOT_LED_COUNT = 1;
+
 /** Distanza fra la faccia del LED e il diffusore: profondità del canale meno lo spessore della striscia. */
 export function ledToDiffuserMm(params: Pick<Params, 'CHANNEL_DEPTH' | 'STRIP_T'>): number {
   return Math.max(0.4, params.CHANNEL_DEPTH - params.STRIP_T);
@@ -56,7 +59,7 @@ function sample(points: readonly Point[], distance: number): { at: Point; dir: [
 
 /**
  * LED sulla parte illuminata di ogni spezzone: dopo l'asola d'ingresso, prima di quella
- * d'uscita. Il numero è lo stesso della BOM, `round(luce · LED_PER_M / 1000)`.
+ * d'uscita. Il numero è lo stesso della BOM, `round(luce · LED_PER_M / 1000)`; un puntino ne ha uno.
  */
 export function lightPointsFromChains(
   chains: readonly LightChain[],
@@ -70,7 +73,7 @@ export function lightPointsFromChains(
     const length = lengthOf(chain.points);
     const slot = chain.closed || chain.dot ? 0 : Math.min(Math.max(params.WIRE_SLOT_L, 0), length / 2);
     const lit = Math.max(0, length - 2 * slot);
-    const count = Math.max(0, Math.round((lit * params.LED_PER_M) / 1000));
+    const count = chain.dot ? DOT_LED_COUNT : Math.max(0, Math.round((lit * params.LED_PER_M) / 1000));
     for (let index = 0; index < count; index++) {
       const along = slot + ((index + 0.5) * lit) / count;
       const { at, dir } = sample(chain.points, along);

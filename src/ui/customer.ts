@@ -1,6 +1,6 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
-import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams } from '../config';
+import { CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
@@ -11,8 +11,21 @@ import type { TraceMode } from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { copy } from './copy.it';
-import { stlFileName } from './signSlug';
+import { plateSvgFileName, stlFileName } from './signSlug';
+import { plateToSvg } from '../export/plate';
+import {
+  DEFAULT_PLATE,
+  PLATE_MARGIN_MAX,
+  PLATE_MARGIN_MIN,
+  PLATE_MATERIALS,
+  PLATE_SHAPES,
+  clampMargin,
+  type PlateChoice,
+  type PlateMaterial,
+  type PlateShape,
+} from '../geometry/plate';
 import { SIZES } from './sizes';
+import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -28,6 +41,8 @@ const TITLES: Record<string, string> = {
   size: 'Misura',
   color: 'Colore',
   image: 'Immagine',
+  plate: 'Fondale',
+  tech: 'Parametri tecnici',
   more: 'Altro',
   request: 'Richiedi',
 };
@@ -42,6 +57,8 @@ const ICONS: Record<string, string> = {
   size: icon('M4 20 L20 4M14 4h6v6M4 14v6h6'),
   color: icon('M12 5a7 7 0 1 0 0.01 0'),
   image: icon('M4 6h16v12H4zM4 15l4-4 3 3 3-4 6 5'),
+  plate: icon('M4 5h16v14H4zM8 9h8M8 13h5'),
+  tech: icon('M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4'),
   more: icon('M6 12h.01M12 12h.01M18 12h.01'),
 };
 
@@ -64,8 +81,36 @@ const tools = [
   ['size', 'Misura'],
   ['color', 'Colore'],
   ['image', 'Immagine'],
+  ['plate', 'Fondale'],
+  ['tech', 'Tecnica'],
   ['more', 'Altro'],
 ] as const;
+const techGroups = TECH_GROUPS.map((group) => `
+  <fieldset class="tech-group">
+    <legend>${group.title}</legend>
+    ${group.fields.map((field) => `
+    <label class="tech-field">
+      <span>${field.label} <small>${field.key}</small></span>
+      <span class="tech-input">
+        <input name="tech-${field.key}" type="number" inputmode="decimal" min="${field.min}" max="${field.max}" step="${field.step}" value="${DEFAULT_PARAMS[field.key]}">
+        <span>${field.unit}</span>
+      </span>
+    </label>`).join('')}
+    ${group.title === 'Striscia LED' ? `
+    <label class="tech-field">
+      <span>Densità dei LED <small>LED_PER_M</small></span>
+      <select name="tech-LED_PER_M">
+        ${ledDensityOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+    </label>` : ''}
+    ${group.title === 'Bordi' ? `
+    <label class="tech-field">
+      <span>Profilo <small>EDGE_PROFILE</small></span>
+      <select name="tech-EDGE_PROFILE">
+        ${EDGE_PROFILES.map((p) => `<option value="${p.value}"${p.value === DEFAULT_PARAMS.EDGE_PROFILE ? ' selected' : ''}>${p.label}</option>`).join('')}
+      </select>
+    </label>` : ''}
+  </fieldset>`).join('');
 
 app.innerHTML = `
   <div class="shell" data-sheet="">
@@ -146,6 +191,30 @@ app.innerHTML = `
           <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
           <canvas id="threshold-preview" data-source="raster" hidden></canvas>
           <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
+        </div>
+        <div class="pane" data-pane="plate" hidden>
+          <div class="choice plate-shape" role="radiogroup" aria-label="Fondale">
+            <label><input type="radio" name="plateShape" value="none" checked><span>Nessuno</span></label>
+            ${PLATE_SHAPES.map((shape) => `<label><input type="radio" name="plateShape" value="${shape.value}"><span>${shape.label}</span></label>`).join('')}
+          </div>
+          <div class="choice plate-material" role="radiogroup" aria-label="Materiale del fondale">
+            ${(Object.keys(PLATE_MATERIALS) as PlateMaterial[]).map((id) => `<label><input type="radio" name="plateMaterial" value="${id}"${id === DEFAULT_PLATE.material ? ' checked' : ''}><span>${PLATE_MATERIALS[id].label} · ${PLATE_MATERIALS[id].thicknessMm} mm</span></label>`).join('')}
+          </div>
+          <label class="tech-field plate-margin">
+            <span>Margine attorno all'insegna</span>
+            <span class="tech-input">
+              <input name="plateMargin" type="number" inputmode="decimal" min="${PLATE_MARGIN_MIN}" max="${PLATE_MARGIN_MAX}" step="1" value="${DEFAULT_PLATE.marginMm}">
+              <span>mm</span>
+            </span>
+          </label>
+          <p id="plate-size" class="tech-note" hidden></p>
+        </div>
+        <div class="pane" data-pane="tech" hidden>
+          <p class="tech-note">Cambiano la geometria stampata: valgono per l'anteprima, gli STL e la richiesta.</p>
+          ${techGroups}
+          <div class="actions">
+            <button type="button" id="tech-reset">Valori predefiniti</button>
+          </div>
         </div>
         <div class="pane" data-pane="more" hidden>
           <div class="actions">
@@ -253,6 +322,38 @@ function wallMm(): number {
   return Math.min(WALL_MAX_MM, Math.max(WALL_MIN_MM, n));
 }
 
+const techNumberInputs = new Map<TechNumericKey, HTMLInputElement>(
+  TECH_FIELDS.map((field) => [field.key, document.querySelector<HTMLInputElement>(`input[name="tech-${field.key}"]`)!]),
+);
+const techProfileInput = document.querySelector<HTMLSelectElement>('select[name="tech-EDGE_PROFILE"]')!;
+const techDensityInput = document.querySelector<HTMLSelectElement>('select[name="tech-LED_PER_M"]')!;
+const techReset = document.querySelector<HTMLButtonElement>('#tech-reset')!;
+
+/** Override dell'ordine: la cornice dalla barra, il resto dallo strumento Tecnica. */
+function orderParams(): Partial<Params> {
+  const numbers: Partial<Record<TechNumericKey, string>> = {};
+  for (const [key, input] of techNumberInputs) numbers[key] = input.value;
+  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value }) };
+}
+
+const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMargin"]')!;
+const plateSize = document.querySelector<HTMLElement>('#plate-size')!;
+
+/** Fondale scelto (SPEC §13). `null`: nessun fondale. */
+function plateChoice(): PlateChoice | null {
+  const shape = document.querySelector<HTMLInputElement>('input[name="plateShape"]:checked')?.value ?? 'none';
+  if (shape === 'none') return null;
+  const material = (document.querySelector<HTMLInputElement>('input[name="plateMaterial"]:checked')?.value ?? DEFAULT_PLATE.material) as PlateMaterial;
+  return { shape: shape as PlateShape, material, marginMm: clampMargin(Number(plateMarginInput.value)) };
+}
+
+function syncPlateFields(): void {
+  const on = plateChoice() !== null;
+  for (const el of document.querySelectorAll<HTMLElement>('.plate-material, .plate-margin')) el.classList.toggle('is-dimmed', !on);
+  for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateMaterial"], input[name="plateMargin"]')) input.disabled = !on;
+  if (!on) plateSize.hidden = true;
+}
+
 function cmLabel(mm: number): string {
   const cm = Math.round((mm / 10) * 10) / 10;
   return `${Number.isInteger(cm) ? String(cm) : cm.toFixed(1)} cm`;
@@ -308,6 +409,22 @@ function renderSummary(): void {
     ['Diffusore', diffuserOn() ? 'Sì' : 'No'],
     ['Cornice', `${wallMm().toFixed(1)} mm`],
   );
+  const plate = plateChoice();
+  rows.push([
+    'Fondale',
+    plate
+      ? `${PLATE_SHAPES.find((s) => s.value === plate.shape)?.label ?? plate.shape}, ${PLATE_MATERIALS[plate.material].label}, margine ${plate.marginMm} mm`
+      : 'Nessuno',
+  ]);
+  const overrides = orderParams();
+  for (const field of TECH_FIELDS) {
+    const value = overrides[field.key];
+    if (value !== undefined) rows.push([field.label, `${value} ${field.unit}`]);
+  }
+  if (overrides.LED_PER_M) rows.push(['Densità dei LED', `${overrides.LED_PER_M} LED/m`]);
+  if (overrides.EDGE_PROFILE) {
+    rows.push(['Profilo', EDGE_PROFILES.find((p) => p.value === overrides.EDGE_PROFILE)?.label ?? overrides.EDGE_PROFILE]);
+  }
   summary.replaceChildren();
   for (const [term, detail] of rows) {
     const dt = document.createElement('dt');
@@ -318,17 +435,83 @@ function renderSummary(): void {
   }
 }
 
-function openSheet(pane: string): void {
-  if (pane === 'text') selectKind('text');
-  shell.dataset.sheet = pane;
-  sheetTitle.textContent = TITLES[pane] ?? pane;
-  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = el.dataset.pane !== pane;
+// Tutti gli strumenti stanno in un solo foglio, uno sotto l'altro, ciascuno in una sezione
+// richiudibile (SPEC §12.2). La barra a destra è l'indice: porta alla sezione e la apre.
+const sheetBody = document.querySelector<HTMLElement>('.sheet-body')!;
+const sectionsBox = document.createElement('div');
+sectionsBox.className = 'sections';
+const sections = new Map<string, HTMLDetailsElement>();
+for (const [id] of tools) {
+  const pane = document.querySelector<HTMLElement>(`.pane[data-pane="${id}"]`)!;
+  const details = document.createElement('details');
+  details.className = 'section';
+  details.dataset.section = id;
+  details.open = true;
+  const summaryEl = document.createElement('summary');
+  summaryEl.textContent = TITLES[id] ?? id;
+  pane.hidden = false;
+  details.append(summaryEl, pane);
+  sectionsBox.append(details);
+  sections.set(id, details);
+}
+sheetBody.prepend(sectionsBox);
+const requestPane = document.querySelector<HTMLElement>('.pane[data-pane="request"]')!;
+
+function markTool(tool: string | null): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
-    button.setAttribute('aria-pressed', button.dataset.tool === pane ? 'true' : 'false');
+    button.setAttribute('aria-pressed', button.dataset.tool === tool ? 'true' : 'false');
   }
-  openRequest.setAttribute('aria-pressed', pane === 'request' ? 'true' : 'false');
-  if (pane !== 'request') lastTool = pane;
-  if (pane === 'request') renderSummary();
+}
+
+/** La sezione in cima al foglio: è quella evidenziata nella barra. */
+function sectionInView(): string | null {
+  const top = sheetBody.getBoundingClientRect().top + 8;
+  let current: string | null = null;
+  for (const [id, details] of sections) {
+    if (details.getBoundingClientRect().top <= top) current = id;
+  }
+  return current ?? tools[0][0];
+}
+
+let jumping = false;
+function scrollToSection(details: HTMLElement): void {
+  const offset = details.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top + sheetBody.scrollTop;
+  jumping = true;
+  sheetBody.scrollTo({ top: Math.max(0, offset - 4), behavior: 'auto' });
+  window.requestAnimationFrame(() => {
+    jumping = false;
+  });
+}
+
+sheetBody.addEventListener('scroll', () => {
+  if (jumping || shell.dataset.sheet !== 'config') return;
+  const id = sectionInView();
+  if (id) {
+    lastTool = id;
+    markTool(id);
+  }
+});
+
+function openSheet(pane: string): void {
+  const config = pane !== 'request';
+  shell.dataset.sheet = config ? 'config' : 'request';
+  sheetTitle.textContent = config ? 'Configura' : (TITLES.request ?? 'Richiedi');
+  sectionsBox.hidden = !config;
+  requestPane.hidden = config;
+  openRequest.setAttribute('aria-pressed', config ? 'false' : 'true');
+  if (!config) {
+    markTool(null);
+    sheetBody.scrollTop = 0;
+    renderSummary();
+    return;
+  }
+  const details = sections.get(pane);
+  if (details) {
+    details.open = true;
+    scrollToSection(details);
+  }
+  lastTool = pane;
+  markTool(pane);
 }
 
 function closeSheet(): void {
@@ -337,15 +520,14 @@ function closeSheet(): void {
     return;
   }
   shell.dataset.sheet = '';
-  for (const el of document.querySelectorAll<HTMLElement>('.pane')) el.hidden = true;
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
-    button.setAttribute('aria-pressed', 'false');
-  }
+  markTool(null);
   openRequest.setAttribute('aria-pressed', 'false');
 }
 
 function toggleSheet(pane: string): void {
-  if (!isDesktop() && shell.dataset.sheet === pane) {
+  const config = pane !== 'request';
+  const showing = config ? shell.dataset.sheet === 'config' && lastTool === pane : shell.dataset.sheet === 'request';
+  if (!isDesktop() && showing) {
     closeSheet();
     return;
   }
@@ -359,7 +541,9 @@ function selectKind(kind: 'text' | 'image'): void {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-const scene = mountSignScene(stage, { background: 0x000000 });
+// Grigio scuro: il neon resta acceso sul fondo, e cornice nera e fondali si staccano (SPEC §12.2).
+const STAGE_BACKGROUND = 0x3a3a3e;
+const scene = mountSignScene(stage, { background: STAGE_BACKGROUND });
 const generator = createGenerator();
 applyNeon(color.value);
 scene.setColor(color.value);
@@ -487,6 +671,8 @@ interface ReadyStl {
   label: string;
   heightMm: number;
   diffuserOn: boolean;
+  /** Fondale: STL della lastra e SVG di taglio laser. */
+  plate: { stl: ArrayBuffer; svg: string } | null;
 }
 
 let readyStl: ReadyStl | null = null;
@@ -505,8 +691,8 @@ function invalidateStl(): void {
   clearStl();
 }
 
-function saveStl(name: string, buffer: ArrayBuffer): void {
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));
+function saveStl(name: string, buffer: ArrayBuffer | string, type = 'model/stl'): void {
+  const url = URL.createObjectURL(new Blob([buffer], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -539,6 +725,10 @@ downloadButton?.addEventListener('click', () => {
   if (!ready || downloadButton?.disabled) return;
   saveStl(stlFileName(ready.label, ready.heightMm, 'housing'), ready.housing);
   if (ready.diffuserOn) saveStl(stlFileName(ready.label, ready.heightMm, 'diffuser'), ready.diffuser);
+  if (ready.plate) {
+    saveStl(stlFileName(ready.label, ready.heightMm, 'fondale'), ready.plate.stl);
+    saveStl(plateSvgFileName(ready.label, ready.heightMm), ready.plate.svg, 'image/svg+xml');
+  }
 });
 
 let request = 0;
@@ -585,9 +775,10 @@ async function showSign(): Promise<void> {
       source: built.source,
       heightMm,
       color: color.value,
-      params: { WALL: wallMm() },
+      params: orderParams(),
       paths: edited?.paths ?? null,
       crossings: edited?.crossings ?? [],
+      plate: plateChoice(),
     };
   } else if (image && svgMarkup) {
     try {
@@ -599,9 +790,10 @@ async function showSign(): Promise<void> {
         source: imported.source,
         heightMm,
         color: color.value,
-        params: { WALL: wallMm() },
+        params: orderParams(),
         paths: edited?.paths ?? null,
         crossings: edited?.crossings ?? [],
+        plate: plateChoice(),
       };
     } catch (err) {
       if (id !== request) return;
@@ -615,9 +807,10 @@ async function showSign(): Promise<void> {
       source: { kind: 'text', text, fontId: fontInput.value },
       heightMm,
       color: color.value,
-      params: { WALL: wallMm() },
+      params: orderParams(),
       paths: edited?.paths ?? null,
       crossings: edited?.crossings ?? [],
+      plate: plateChoice(),
     };
   }
   status.textContent = 'Generazione…';
@@ -634,6 +827,10 @@ async function showSign(): Promise<void> {
         label,
         heightMm,
         diffuserOn: withDiffuser,
+        plate:
+          result.plate && result.plateMesh
+            ? { stl: meshToStl(result.plateMesh, 'fondale'), svg: plateToSvg(result.plate) }
+            : null,
       };
       downloadButton.disabled = false;
       downloadButton.textContent = copy.buttons.downloadCustomerStl;
@@ -645,7 +842,14 @@ async function showSign(): Promise<void> {
       diffuser: result.diffuserMesh,
       lights: result.lightPoints,
       ledGapMm: result.ledGapMm,
+      plate: result.plate && result.plateMesh ? { mesh: result.plateMesh, material: result.plate.choice.material } : null,
     });
+    if (result.plate) {
+      plateSize.hidden = false;
+      plateSize.textContent = `Lastra ${cmLabel(result.plate.widthMm).replace(' cm', '')} × ${cmLabel(result.plate.heightMm)}, ${result.plate.holes.length} fori.`;
+    } else {
+      plateSize.hidden = true;
+    }
     scene.setColor(color.value);
     showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
@@ -661,7 +865,7 @@ async function showSign(): Promise<void> {
     if (shell.dataset.sheet === 'request') renderSummary();
     const leds = result.lightPoints.length > 0 ? `${result.lightPoints.length} LED` : 'Nessun LED sulla striscia.';
     const shown = result.warnings.filter((warning) => {
-      if (/bassa risoluzione|tratto non uniforme|^Puntino|^Trattino fuori/.test(warning)) return true;
+      if (/bassa risoluzione|tratto non uniforme|^Puntino troppo piccolo|^Puntino non|^Trattino fuori/.test(warning)) return true;
       return image && warning.startsWith('Sagome che si fondono');
     });
     const extra = [...notes, ...shown].join(' ');
@@ -677,6 +881,8 @@ const schedule = (): void => {
   window.clearTimeout(timer);
   timer = window.setTimeout(() => void showSign(), 350);
 };
+// Con tutte le sezioni aperte non c'è più «aprire Testo»: è il campo del testo a riportare la sorgente al testo.
+textInput.addEventListener('focus', () => selectKind('text'));
 textInput.addEventListener('input', () => {
   syncFontSamples();
   if (!keepOrDrop(textInput.value !== sourceMemory.text)) return;
@@ -771,6 +977,48 @@ wallInput.addEventListener('change', () => {
   wallInput.value = wallMm().toFixed(1);
   void showSign();
 });
+
+/** L'asola è larga quanto il canale (SPEC §3) finché non la si cambia a mano. */
+let lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+function onTechChange(): void {
+  const channel = techNumberInputs.get('CHANNEL_W')!;
+  const slot = techNumberInputs.get('WIRE_SLOT_W')!;
+  if (channel.value !== lastChannelW) {
+    if (slot.value === lastChannelW) slot.value = channel.value;
+    lastChannelW = channel.value;
+  }
+  for (const field of TECH_FIELDS) {
+    const input = techNumberInputs.get(field.key)!;
+    input.setAttribute('aria-invalid', techFieldInvalid(field, input.value) ? 'true' : 'false');
+  }
+  invalidateStl();
+  schedule();
+}
+for (const input of techNumberInputs.values()) input.addEventListener('input', onTechChange);
+techProfileInput.addEventListener('change', onTechChange);
+techDensityInput.addEventListener('change', onTechChange);
+for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateShape"], input[name="plateMaterial"]')) {
+  input.addEventListener('change', () => {
+    syncPlateFields();
+    invalidateStl();
+    void showSign();
+  });
+}
+plateMarginInput.addEventListener('input', () => {
+  invalidateStl();
+  schedule();
+});
+plateMarginInput.addEventListener('change', () => {
+  plateMarginInput.value = String(clampMargin(Number(plateMarginInput.value)));
+});
+syncPlateFields();
+techReset.addEventListener('click', () => {
+  for (const field of TECH_FIELDS) techNumberInputs.get(field.key)!.value = String(DEFAULT_PARAMS[field.key]);
+  techProfileInput.value = DEFAULT_PARAMS.EDGE_PROFILE;
+  techDensityInput.value = String(DEFAULT_LED_DENSITY);
+  lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+  onTechChange();
+});
 for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
   card.addEventListener('click', () => {
     const id = card.dataset.font;
@@ -863,7 +1111,7 @@ window.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   const target = event.target;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
-  if (shell.dataset.sheet === 'more' && editorCanvas.dataset.open === 'true') return;
+  if (shell.dataset.sheet === 'config' && editorCanvas.dataset.open === 'true') return;
   if (!shell.dataset.sheet) return;
   if (isDesktop() && shell.dataset.sheet !== 'request') return;
   closeSheet();
@@ -881,7 +1129,7 @@ async function openEditor(): Promise<void> {
     editor = await openPathEditor({
       canvas: editorCanvas,
       toolbar: editorToolbar,
-      getParams: () => resolveParams({ WALL: wallMm() }),
+      getParams: () => resolveParams(orderParams()),
       onCommit(paths, crossings) {
         edited = { paths, crossings };
         restoreButton.disabled = false;

@@ -24,12 +24,14 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { StlMesh } from '../export/stl';
 import type { LightPoint } from '../geometry/lights';
+import type { PlateMaterial } from '../geometry/plate';
 import {
   createDiffuserGlowMaterial,
   createEmitterMaterial,
@@ -51,6 +53,8 @@ export interface SignViewData {
   lights: readonly LightPoint[];
   /** Distanza LED–diffusore, mm. Larghezza della gaussiana. */
   ledGapMm: number;
+  /** Fondale dietro l'housing (SPEC §13), con il suo materiale. Assente: nessun fondale. */
+  plate?: { mesh: StlMesh; material: PlateMaterial } | null;
 }
 
 export interface SignScene {
@@ -67,6 +71,8 @@ export interface SignScene {
 }
 
 const FRONT_LIMIT = (40 * Math.PI) / 180;
+/** Oltre quest'angolo fra due facce lo spigolo resta vivo nell'ombreggiatura. */
+const CREASE_ANGLE = (35 * Math.PI) / 180;
 const WALL = 0xe6e0d6;
 
 function cssHex(color: number): string {
@@ -89,8 +95,11 @@ function geometryOf(mesh: StlMesh): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setIndex(new BufferAttribute(mesh.triVerts, 1));
-  geometry.computeVertexNormals();
-  return geometry;
+  // Normali a spigolo: le pareti curve restano morbide, le facce piane (cima del diffusore, bordo,
+  // lastra) restano piane invece di sfumare a ventaglio verso i vertici condivisi con le pareti.
+  const creased = toCreasedNormals(geometry, CREASE_ANGLE);
+  geometry.dispose();
+  return creased;
 }
 
 export function mountSignScene(host: HTMLElement, options?: { background?: number }): SignScene {
@@ -154,6 +163,23 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
     side: DoubleSide,
   });
   const diffuserOff = new MeshStandardMaterial({ color: 0xf7f4ef, roughness: 0.94, metalness: 0, side: DoubleSide });
+  // Fondale: plexi nero trasparente (fumé lucido, si vede il muro dietro) o legno opaco.
+  const plateMaterials: Record<PlateMaterial, MeshStandardMaterial> = {
+    smoke: new MeshStandardMaterial({
+      // Sullo sfondo nero del cliente un nero pieno sparirebbe: un grigio fumé lucido lo stacca.
+      color: 0x3a3a48,
+      roughness: 0.16,
+      metalness: 0.4,
+      transparent: true,
+      opacity: 0.8,
+      // Il bagliore del neon sulla lastra: il plexi lucido lo riflette, un po' smorzato.
+      emissive: 0xb4b4c8,
+      depthWrite: false,
+      side: DoubleSide,
+    }),
+    // Il legno opaco diffonde il bagliore in caldo.
+    wood: new MeshStandardMaterial({ color: 0xa2713f, roughness: 0.82, metalness: 0, side: DoubleSide, emissive: 0xffd2a0 }),
+  };
 
   const glowTarget = new WebGLRenderTarget(128, 128, { type: HalfFloatType, depthBuffer: false });
   glowTarget.texture.generateMipmaps = false;
@@ -166,6 +192,11 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
   splat.frustumCulled = false;
   glowScene.add(splat);
   const glowMaterial = createDiffuserGlowMaterial(glowTarget.texture);
+  // La lastra sta davanti al muro e ne coprirebbe il bagliore: lo riceve lei, dalla stessa texture.
+  for (const material of Object.values(plateMaterials)) {
+    material.emissiveMap = glowTarget.texture;
+    material.emissiveIntensity = 0;
+  }
   const wallMaterial = createWallGlowMaterial(glowTarget.texture, new Color(backdrop));
   wall.material = wallMaterial;
   const emitterMaterial = createEmitterMaterial();
@@ -176,6 +207,7 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
 
   let housingMesh: Mesh | null = null;
   let diffuserMesh: Mesh | null = null;
+  let plateMesh: Mesh | null = null;
   let lights: readonly LightPoint[] = [];
   let ledGap = 6;
   let mode: PreviewMode = 'accesa';
@@ -274,13 +306,18 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
       diffuserMesh.material = on ? glowMaterial : diffuserOff;
     }
     emitters.visible = open && lights.length > 0;
-    daylight.intensity = on || open ? 0.22 : 0.9;
-    sun.intensity = on || open ? 0.28 : 1.15;
+    // Con un fondale la stanza resta un po' più chiara, altrimenti la lastra sparisce nel nero.
+    const room = plateMesh ? 3 : 1;
+    daylight.intensity = on || open ? 0.22 * room : 0.9;
+    sun.intensity = on || open ? 0.28 * room : 1.15;
     bloom.threshold = BLOOM_THRESHOLD;
     bloom.radius = haloRadius;
     bloom.strength = on || open ? haloRadius * 0.35 : 0;
     const spread = DEFAULT_HALO > 0 ? haloRadius / DEFAULT_HALO : 0;
     wallMaterial.uniforms.uGain!.value = on ? WALL_GLOW_GAIN * spread : 0;
+    const plateGlow = on ? WALL_GLOW_GAIN * spread : 0;
+    plateMaterials.wood.emissiveIntensity = plateGlow * 0.9;
+    plateMaterials.smoke.emissiveIntensity = plateGlow * 0.85;
     bloom.enabled = on || open;
   };
 
@@ -311,6 +348,19 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
     wallMaterial.uniforms.uSpan!.value.set(worldW, worldH);
     emitterMaterial.uniforms.uPointSize!.value = Math.max(6, 2.2 * pixelsPerMm);
     void span;
+  };
+
+  /** Coordinate della texture del bagliore sulla lastra: le stesse del muro, dal piano XY. */
+  const plateGlowUv = (geometry: BufferGeometry): void => {
+    const origin = wallMaterial.uniforms.uOrigin!.value as Vector2;
+    const span = wallMaterial.uniforms.uSpan!.value as Vector2;
+    const pos = geometry.getAttribute('position');
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = (pos.getX(i) - origin.x) / span.x;
+      uv[i * 2 + 1] = (pos.getY(i) - origin.y) / span.y;
+    }
+    geometry.setAttribute('uv', new BufferAttribute(uv, 2));
   };
 
   const paintColors = (time: number): void => {
@@ -391,15 +441,30 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
       diffuserMesh?.geometry.dispose();
       if (housingMesh) scene.remove(housingMesh);
       if (diffuserMesh) scene.remove(diffuserMesh);
+      if (plateMesh) {
+        scene.remove(plateMesh);
+        plateMesh.geometry.dispose();
+        plateMesh = null;
+      }
       ledGap = Math.max(0.4, sign.ledGapMm);
       housingMesh = new Mesh(geometryOf(sign.housing), housingMaterial);
       diffuserMesh = new Mesh(geometryOf(sign.diffuser), diffuserOff);
       scene.add(housingMesh, diffuserMesh);
+      if (sign.plate) {
+        // Facce piane: normali per faccia, altrimenti la faccia grande si sfuma verso i bordi e
+        // mostra i triangoli lunghi della triangolazione.
+        plateMesh = new Mesh(geometryOf(sign.plate.mesh), plateMaterials[sign.plate.material]);
+        plateMesh.renderOrder = -1;
+        scene.add(plateMesh);
+      }
       setLights(sign.lights);
       const box = new Box3().setFromObject(housingMesh);
       if (box.isEmpty()) box.set(new Vector3(-10, -10, 0), new Vector3(10, 10, 12));
       layoutGlow(box);
-      frame(box);
+      if (plateMesh) plateGlowUv(plateMesh.geometry);
+      // L'inquadratura comprende il fondale; il bagliore resta calcolato sull'insegna.
+      const view = plateMesh ? box.clone().union(new Box3().setFromObject(plateMesh)) : box;
+      frame(view);
       applyMode();
       paintColors(0);
       renderGlow();
@@ -433,9 +498,12 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
       controls.dispose();
       housingMesh?.geometry.dispose();
       diffuserMesh?.geometry.dispose();
+      plateMesh?.geometry.dispose();
       splat.geometry.dispose();
       housingMaterial.dispose();
       diffuserOff.dispose();
+      plateMaterials.smoke.dispose();
+      plateMaterials.wood.dispose();
       splatMaterial.dispose();
       glowMaterial.dispose();
       wallMaterial.dispose();

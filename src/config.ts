@@ -6,6 +6,21 @@ export const ORDER_SCHEMA_VERSION = 2;
 /** Pagina cliente: offre il download di housing.stl e, se attivo, diffuser.stl (SPEC §5). */
 export const CUSTOMER_STL_DOWNLOAD = true;
 
+/**
+ * Fondale laser (SPEC §13). Non sta in `Params`: non cambia housing né diffusore.
+ * Kerf per materiale DA TARARE sul laser: 0 lascia le misure nominali.
+ */
+export const PLATE_PARAMS = Object.freeze({
+  CORNER_R: 8,
+  FIX_HOLE_D: 3.4,
+  WIRE_HOLE_D: 6,
+  MOUNT_HOLE_D: 5,
+  MOUNT_INSET: 10,
+  /** Aria fra un foro di montaggio e la sagoma dell'insegna. */
+  MOUNT_CLEARANCE: 3,
+  KERF: Object.freeze({ smoke: 0, wood: 0 }),
+});
+
 /** Lato lungo massimo di una bitmap caricata, prima della soglia (SPEC §4bis). */
 export const IMAGE_MAX_PX = 4096;
 

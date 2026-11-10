@@ -4,7 +4,7 @@
 import type { Params } from '../config';
 import { resampleChain } from '../geometry/chain';
 import type { Point } from '../geometry/rasterize';
-import { centerlineClearance, validateStrip } from '../geometry/validate';
+import { centerlineClearance, touchPoints, validateStrip } from '../geometry/validate';
 
 export interface LiveSegment {
   id: string;
@@ -100,7 +100,7 @@ export function liveCheck(
   const lines = segments
     .filter((segment) => segment.points.length >= 2)
     .map((segment) => ({ points: segment.points, closed: segment.closed }));
-  const clash = lines.length >= 2 ? centerlineClearance(lines, params, []) : null;
+  const clash = lines.length >= 2 ? centerlineClearance(lines, params, touchPoints(lines, params)) : null;
   if (clash) {
     let nearest = '';
     let best = Infinity;

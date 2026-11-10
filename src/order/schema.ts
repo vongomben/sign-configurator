@@ -1,5 +1,6 @@
 // Ordine v3 (SPEC §6). v1 si legge come v2, poi v2 come v3: stessi STL e stessa BOM.
 import type { Params } from '../config';
+import type { PlateChoice } from '../geometry/plate';
 
 export interface OrderV1 {
   schemaVersion: 1;
@@ -88,6 +89,8 @@ export interface SignOrder {
   /** null finché il cliente non congela i tracciati. */
   paths: OrderPath[] | null;
   crossings: OrderCrossing[];
+  /** Fondale laser (SPEC §13). Assente o null: nessun fondale. */
+  plate?: PlateChoice | null;
 }
 
 export type SizePreset = 'S' | 'M' | 'L' | 'XL';
@@ -124,6 +127,8 @@ export interface SignOrderV3 {
   paths: OrderPath[] | null;
   crossings: OrderCrossing[];
   customer: CustomerChoices;
+  /** Fondale laser (SPEC §13). Assente o null: nessun fondale. Campo facoltativo di v3. */
+  plate?: PlateChoice | null;
 }
 
 function copySource(source: OrderSource): OrderSource {
@@ -199,6 +204,7 @@ function asV2(order: OrderV1 | SignOrder | SignOrderV3): SignOrder {
     params: { ...order.params },
     paths: order.paths ? order.paths.map(copyPath) : null,
     crossings: order.crossings.map(copyCrossing),
+    ...(order.plate ? { plate: { ...order.plate } } : {}),
   };
 }
 
@@ -218,5 +224,6 @@ export function migrateOrder(order: OrderV1 | SignOrder | SignOrderV3): SignOrde
     paths: geometry.paths,
     crossings: geometry.crossings,
     customer,
+    ...(geometry.plate ? { plate: geometry.plate } : {}),
   };
 }

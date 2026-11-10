@@ -107,7 +107,7 @@ Validazione (con avviso):
 ## 4. Font
 
 - **Sacramento** e **Neonderthaw** (Google Fonts, SIL OFL), font a contorno (`kind: "outline"`). Gli TTF vanno in `public/fonts/` insieme a `OFL.txt`.
-- **Hershey Script Simplex** e **EMS Allure**, font a tratto singolo (`kind: "stroke"`). Non si rasterizzano: i path dei glifi sono già la linea della striscia. Hershey è di pubblico dominio con obbligo di attribuzione (`LICENSE.txt`). EMS Allure è un derivato OFL di Allura (`OFL.txt`); il nome riservato Allura non è usato.
+- **Hershey Script Simplex** e **EMS Allure**, font a tratto singolo (`kind: "stroke"`). Non si rasterizzano: i path dei glifi sono già la linea della striscia. I glifi però sono spezzate grossolane (la «S» di EMS Allure ha 24 vertici): prima del grafo ogni tratto diventa una spline Catmull-Rom centripeta che passa per ogni vertice, campionata a 1 mm (`splineThroughPolyline` in `smooth.ts`). Le svolte oltre 75° (`STROKE_CORNER_DEG`) restano spigoli, come la punta dove il tratto sale e ridiscende. Hershey è di pubblico dominio con obbligo di attribuzione (`LICENSE.txt`). EMS Allure è un derivato OFL di Allura (`OFL.txt`); il nome riservato Allura non è usato.
 - I font a contorno hanno tratto costante: la linea centrale si ricava per scheletrizzazione (sezione 5).
   - **Sacramento**: tratto pieno, monolinea; ogni lettera è un'unica regione (la *i* ha anche il puntino).
   - **Neonderthaw**: disegna il **tubo neon cavo** ed è il più adatto al prodotto. Ogni tubo è una
@@ -244,7 +244,14 @@ testo + font + altezza, oppure immagine (§4bis)
         Gli spigoli si elencano a parte. `CUSP_MODE` `"split"` taglia lo spezzone nello spigolo
  → [H] 2D (manifold-3d CrossSection): offset della linea levigata [E] → canale (CHANNEL_W/2) e
         profilo esterno (CHANNEL_W/2 + WALL), giunzioni e terminazioni arrotondate, larghezza esterna costante;
-        la freccia della catena allarga solo il lato interno, senza scendere sotto WALL_MIN;
+        la freccia della catena allarga solo il lato interno, senza scendere sotto WALL_MIN:
+        lungo la linea levigata l'allargamento vale la freccia entro mezzo HINGE_PITCH da ogni
+        cerniera e scende a zero in un HINGE_PITCH di rampa (`innerWidening`), senza gradini;
+        chiusura e apertura morfologica del canale di raggio WALL_MIN (`closeChannel`, tre offset:
+        +r, −2r, +r): buchi e tacche più stretti di 2·WALL_MIN si riempiono e gli spigoli in fuori
+        si arrotondano (lenti fra una banda della freccia e il canale, spicchi di
+        parete agli incroci e alle giunzioni); sarebbero pilastrini o punte di parete non stampabili
+        e fessure scure nel diffusore. Il canale resta dentro il profilo esterno;
         ai CROSSING_GAP il canale resta continuo, solo la striscia si interrompe;
         l'asola è gli ultimi WIRE_SLOT_L dello spezzone, a filo della terminazione arrotondata
  → [I] 3D (manifold-3d): estrusione profilo esterno (con smusso EDGE_PROFILE in cima) − canale
@@ -270,7 +277,8 @@ L'interfaccia non aspetta il solido: la generazione 3D parte dopo il disegno 2D.
 
 La scena three.js non sa se la sorgente è una striscia COB o un pixel: legge `lightPoints`.
 
-- **Housing**: nero opaco, appena satinato. Il **diffusore** è una mesh a parte.
+- **Housing**: nero opaco, appena satinato. Il **diffusore** è una mesh a parte. Le normali sono a
+  spigolo (`toCreasedNormals`, 35°): pareti curve morbide, facce piane piane, senza ventagli.
 - **Spenta**: diffusore bianco opaco, luce ambiente diurna, niente bloom.
 - **Accesa**: sul diffusore la luminosità è la somma di gaussiane centrate sui `lightPoints`.
   La sigma è `ledGapMm`, così se il passo è grande rispetto alla profondità i punti restano
@@ -396,7 +404,11 @@ Una cerniera oltre `HINGE_MAX_DEG` si classifica confrontando la catena con la s
   minima garantisce due canali affiancati con `MIN_GAP` fra le sagome.
   Se due tratti non contigui sono più vicini, le sagome si fondono: avviso con la posizione e
   l'altezza che li separa (le distanze scalano con l'altezza). Quel valore entra nel riepilogo
-  «altezza minima». Se non ci sono curve né fusioni, l'altezza può scendere fino al passo di taglio.
+  «altezza minima». Le giunzioni a T (nodo di grado 3: il ramo restante finisce sul tratto che
+  prosegue) non sono fusioni: lì le sagome si toccano per disegno, come a un incrocio, e la distanza
+  resta 0 a ogni scala. Si riconoscono sulle linee prima della levigatura (un capo aperto entro 0,5 mm
+  da un altro tratto, `touchPoints` in `validate.ts`) e si escludono come gli incroci, entro
+  `CHANNEL_W + 2·WALL + MIN_GAP` dal contatto. Oltre quel raggio due rami vicini contano ancora. Se non ci sono curve né fusioni, l'altezza può scendere fino al passo di taglio.
   Gli spigoli non entrano nel conto.
 - **spigolo**: l'angolo è concentrato in al più 2 cerniere e il raggio non cresce (cuspide del font o
   dello scheletro). Non si risolve con la scala. Si riporta a parte, con conteggio e posizione.
@@ -416,12 +428,20 @@ Una cerniera oltre `HINGE_MAX_DEG` si classifica confrontando la catena con la s
 - `"dot"` (default): uno spezzone dritto lungo `CUT_PITCH`, centrato sul puntino e orientato come
   l'asta più vicina. Il canale è una pillola (la linea più le testate tonde). Al posto delle asole
   ci sono due fori passanti `DOT_WIRE_HOLE_D` sotto le piazzole, uno per estremità. I `WIRE_SLOT_L`
-  non si sottraggono: la luce è tutto lo spezzone e i LED sono `round(CUT_PITCH · LED_PER_M / 1000)`.
+  non si sottraggono: la luce è tutto lo spezzone. Il puntino porta **un solo LED**, al centro
+  (`DOT_LED_COUNT` in `lights.ts`), nell'anteprima e nella BOM.
   Nella BOM è uno spezzone a sé e non conta fra le asole. L'ingombro del puntino è il contorno
   dell'inchiostro (lo scheletro allargato di mezzo spessore del tratto), non la linea dello scheletro.
-  Ci sta se il rettangolo lungo `CUT_PITCH` e largo `CHANNEL_W + 2·WALL` esce al più di
-  `DOT_OVERHANG_MM` da quell'ingombro. Se non ci sta, rilievo senza striscia, con avviso e altezza
-  minima: nessuno spezzone con luce sotto il passo di taglio.
+  **Il puntino è sempre un LED.** Se il rettangolo lungo `CUT_PITCH` e largo `CHANNEL_W + 2·WALL`
+  esce più di `DOT_OVERHANG_MM` da quell'ingombro (i font a tratto singolo, le misure piccole), la
+  pillola resta accesa e più grande del disegno, con un avviso solo per l'admin («Puntino più
+  piccolo della pillola del LED: sporge di X mm»). Se la pillola tocca l'asta, la fusione ([G])
+  blocca l'invio e indica l'altezza che li separa.
+- **Segni isolati** (l'accento di «ì», «è», …), con `"dot"`: un tratto aperto che non passa a meno di
+  `max(CORNER_MERGE_DIST, 2·CROSSING_GAP + 1,5)` da nessun altro e più corto di
+  `CUT_PITCH + 2·WIRE_SLOT_L` (troppo corto per due asole e la luce minima) si comporta come il
+  puntino: spezzone a sé senza asole, fori sotto le piazzole, **un LED**. Sotto `CUT_PITCH` si
+  allunga a `CUT_PITCH`, centrato e orientato come il tratto (`markPieces` in `strip.ts`).
 - `"dash"`: come sopra, ma con le asole normali. Il trattino, parete compresa, deve stare nel puntino
   allargato al massimo di `WALL`. Se non ci sta, `"unlit"` con la posizione.
 - `"unlit"`: sagoma piena in rilievo, senza canale e senza striscia, quindi senza LED.
@@ -488,7 +508,7 @@ quella lunghezza arrotondata per difetto a multipli di `CUT_PITCH`.
 `wireSlotW` / `wireSlotL` = dimensioni dell'asola. `wireSlots` = asole rimaste singole: due per spezzone,
 meno le due assorbite da ogni tasca. Uno spigolo diviso (`CUSP_MODE` `"split"`), un trattino
 (`"dash"`) o un puntino (`"dot"`) aggiunge uno spezzone. Il puntino `"dot"` non ha asole: ha due
-fori `DOT_WIRE_HOLE_D`. Un puntino `"unlit"` non entra nella BOM.
+fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
 `corners` = giunti d'angolo: posizione del labbro comune, spezzoni collegati, filo 0 mm.
 
 `assembly` è il riepilogo di montaggio, in cima alla tabella BOM nella pagina di debug:
@@ -617,6 +637,12 @@ freccia su ogni spezzone.
   sopra, `sizePreset` e `pricingVersion` `null`. Un ordine v1 o v2 migrato produce **gli stessi STL
   e la stessa BOM** (test come `orderSchema.test.ts`).
 - L'ordine **non contiene dati personali**: i contatti viaggiano solo nella richiesta (§12.7).
+- `plate` (facoltativo, anche in v2): il fondale laser di §13, `{ "shape": "rect" | "contour",
+  "material": "smoke" | "wood", "marginMm": 5–80 }`. Assente o `null`: nessun fondale. Sta fuori da
+  `customer` perché produce file di produzione. Non serve una nuova versione: chi non lo conosce lo
+  ignora, e un ordine senza `plate` produce gli stessi STL e la stessa BOM. La migrazione lo copia
+  solo se c'è; nel link condiviso un valore sconosciuto si ignora con un avviso e un margine fuori
+  limite si riporta al limite.
 
 Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo, nessuna casualità).
 
@@ -678,7 +704,7 @@ playwright.config.ts
 
 ## 9. Fuori scope v1
 
-Suddivisione per il piatto di stampa, lastra di fondo CNC, pagamenti, account utente.
+Suddivisione per il piatto di stampa, pagamenti, account utente.
 La pagina cliente invia una richiesta, non un ordine pagato (§12.7).
 
 ## 10. Domande aperte
@@ -725,51 +751,60 @@ Niente procedura a passi. La prima cosa che si vede è l'insegna «Ciao» accesa
 Una sola schermata (`100dvh`): la pagina non scorre mai. Gli stili stanno in `src/ui/customer.css`
 (importato da `customer.ts`), con il font di sistema e senza stili inline. `#stage` e il suo canvas
 sono alti il 100 % con `!important`: `scene.ts` lascia il `70vh` inline perché lo usa anche l'admin.
-Lo sfondo dell'anteprima cliente è nero; l'admin resta sul muro chiaro di §5.
+Lo sfondo dell'anteprima cliente è grigio scuro (`#3a3a3e`, `--stage` in `customer.css` e
+`STAGE_BACKGROUND` in `customer.ts`): sul nero cornice e fondali sparivano, il neon resta acceso
+lo stesso. L'admin resta sul muro chiaro di §5.
 
-Sotto i 900 px il foglio è una riga della griglia e l'anteprima si restringe sopra di esso: non la
+Sotto i 900 px il foglio è una riga della griglia, a sinistra della barra, e l'anteprima si restringe sopra di esso: non la
 copre. All'apertura nessun foglio è aperto.
 
 ```
-┌──────────────────────────────┐
-│ Accesa|Spenta  Cornice mm  Richiedi │
-│ Con|Senza diffusore               │
-│                              │
-│        «Ciao» accesa         │
-│                              │
-│ 114 LED              5 V · 9 A │
-├──────────────────────────────┤
-│  foglio, max 48dvh     Fatto │  ← chiuso all'avvio
-├──────────────────────────────┤
-│ Testo Font Misura Colore …   │
-└──────────────────────────────┘
+┌───────────────────────────┬──────┐
+│ Accesa|Spenta    Richiedi │ Testo│
+│ Con|Senza diffusore       │ Font │
+│ Cornice mm                │Misura│
+│      «Ciao» accesa        │Colore│
+│                           │  …   │
+│ 114 LED         5 V · 9 A │      │
+├───────────────────────────┤      │
+│ foglio, max 48dvh   Fatto │      │  ← chiuso all'avvio
+└───────────────────────────┴──────┘
 ```
 
 - **Anteprima** (`#stage`) a tutto schermo. Sovrapposti in alto: a sinistra la pillola Accesa/Spenta
   (`radio name="mode"`). Subito sotto, la pillola Con diffusore / Senza diffusore (`radio
   name="diffuser"`): se è off la scena va in «senza diffusore», altrimenti resta accesa o spenta.
   Fra quel blocco e «Richiedi» (`#open-request`, nel colore scelto, con un leggero alone) c'è
-  `input name="wallMm"` (`WALL`, 1,6–5 mm). In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
+  `input name="wallMm"` (`WALL`, 1,6–5 mm). Sotto i 900 px, con l'anteprima ristretta dalla barra,
+  la cornice scende in una terza riga sotto il diffusore, a sinistra. In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
   destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
   ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
-- **Dock** (`nav.dock`), sempre visibile: sei strumenti grandi (≥ 48 px, icona + etichetta), ciascuno
-  con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
-  «Immagine», `more` «Altro».
-- Toccare uno strumento apre un foglio dal basso (`.sheet`, max 48dvh, angoli arrotondati, «Fatto»
-  `#sheet-close`). Toccarlo di nuovo o «Fatto» lo chiude. Un solo foglio alla volta. Esc chiude il
-  foglio, tranne durante il ritocco e tranne quando il focus è su un campo.
+- **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
+  schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno
+  sotto l'altro, centrati. Ciascuno con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
+  «Immagine», `plate` «Fondale», `tech` «Tecnica», `more` «Altro».
+- **Tutto in chiaro.** Gli strumenti non si alternano: stanno tutti nello stesso foglio «Configura»
+  (`data-sheet="config"`), uno sotto l'altro, ciascuno in una sezione richiudibile
+  (`details.section[data-section=…]`, aperte all'avvio, intestazione con freccia). La barra è
+  l'indice: toccare uno strumento apre il foglio, apre la sua sezione e la porta in cima;
+  scorrendo, la barra evidenzia la sezione in cima. Su mobile il foglio sale dal basso (`.sheet`,
+  max 48dvh, angoli arrotondati, «Fatto» `#sheet-close`) e scorre al suo interno; toccare di nuovo
+  lo strumento evidenziato o «Fatto» lo chiude. Richiedi è un foglio a parte (`data-sheet="request"`)
+  che nasconde le sezioni. Esc chiude il foglio, tranne durante il ritocco e tranne quando il focus
+  è su un campo.
 - Il canvas `#path-editor` sta sopra l'anteprima (`position: absolute`, 100 % con `!important`) ed è
-  visibile solo con il foglio Altro aperto. Cambiare foglio non chiama `editor.close()`.
+  visibile solo con il foglio Configura aperto e la sezione Altro aperta. Chiudere la sezione non
+  chiama `editor.close()`.
 
-**Desktop** (≥ 900 px): anteprima a sinistra, dock sotto; il foglio è una colonna fissa di 400 px a
-destra, sempre aperta (all'avvio su Testo, mai vuota), con il titolo dello strumento. Esc, sul
-desktop, lascia solo il foglio Richiedi e torna all'ultimo strumento.
+**Desktop** (≥ 900 px): anteprima a sinistra, poi il foglio, una colonna fissa di 400 px, poi il dock
+sul bordo destro. Il foglio Configura è sempre aperto, con tutte le sezioni; «Fatto» lì non si mostra.
+Esc, sul desktop, lascia solo il foglio Richiedi e torna all'ultima sezione.
 
-Ogni foglio è un `.pane[data-pane=…]`:
+Ogni sezione contiene un `.pane[data-pane=…]`; Richiedi è il `.pane[data-pane="request"]`:
 
-- **text.** `input name="text"`, valore iniziale «Ciao», grande. Aprire Testo riporta la sorgente al
+- **text.** `input name="text"`, valore iniziale «Ciao», grande. Mettere il fuoco sul campo riporta la sorgente al
   testo.
-- **font.** Schede che scorrono in orizzontale (`scroll-snap`): ognuna mostra il testo del cliente nel
+- **font.** Schede compatte in una griglia a due colonne, tutte in vista senza scorrimento orizzontale: ognuna mostra il testo del cliente nel
   font. I TTF si caricano con `FontFace` da `import.meta.env.BASE_URL` + `font.file`. `select
   name="fontId"` resta nascosto ed è la fonte di verità. Con un'immagine come sorgente lo strumento è
   attenuato. **v1.1**: miniature 2D per i font a tratto singolo.
@@ -780,9 +815,31 @@ Ogni foglio è un `.pane[data-pane=…]`:
 - **color.** Nove pallini, `input type="color" name="color"` e `radio name="effect"` fisso/arcobaleno.
   Il colore scelto aggiorna `--neon` e `--on-neon` (chiaro o scuro in base alla luminanza), usati da
   «Richiedi», dallo strumento attivo e dai pulsanti primari. **v1.1**: un colore per spezzone.
+- **plate** («Fondale», §13). Forma: Nessuno / Rettangolare / Sagomato attorno ai LED
+  (`radio name="plateShape"`: `none`, `rect`, `contour`). Materiale: Plexi nero trasparente o Legno,
+  con lo spessore (`radio name="plateMaterial"`). Margine attorno all'insegna, 5–80 mm
+  (`input name="plateMargin"`). Con «Nessuno» materiale e margine sono attenuati e disattivati.
+  Dopo la generazione `#plate-size` mostra le misure della lastra e il numero di fori. Il fondale
+  compare nel riepilogo di Richiedi.
 - **image.** Grande area «Carica un'immagine» con `input name="image"`. Il file rende l'immagine la
   sorgente (`radio` nascosti `name="sourceKind"`). Poi compaiono traccia, soglia, inverti e «Torna al
   testo» (`#back-to-text`), come in §4bis.
+- **tech** («Parametri tecnici»). Gli stessi parametri del bend test, raggruppati come lì, con
+  un'etichetta in italiano e il nome del parametro: striscia (`STRIP_W`, `STRIP_T`, `HINGE_PITCH`,
+  `HINGE_MAX_DEG`), canale (`CHANNEL_W`, `CHANNEL_DEPTH`, `FLOOR`), fili (`WIRE_SLOT_W`,
+  `WIRE_SLOT_L`, `SLOT_LIP_CHAMFER`), bordi (`EDGE_PROFILE`, `CHAMFER_SIZE`, `CHAMFER_ANGLE`,
+  `LAYER_STEP`).
+  Nella striscia c'è anche la **densità dei LED** (`select name="tech-LED_PER_M"`): solo 30, 60,
+  74, 96 e 144 LED/m (`LED_DENSITIES` in `techParams.ts`), predefinita 144 (`DEFAULT_LED_DENSITY`).
+  Il profilo della striscia in `config.ts` (160, la COB) non è nella scala e vale solo per admin e
+  debug: la pagina cliente scrive sempre `LED_PER_M` nell'ordine. Cambia il numero e il passo dei
+  LED nell'anteprima, nella BOM e nell'alimentatore; non cambia `CUT_PITCH`. Il puntino e i segni
+  isolati restano a un LED. Campi `input name="tech-<PARAMETRO>"`, tabella e limiti in `src/ui/techParams.ts`.
+  `WALL` resta sulla barra dell'anteprima; `BANK_TRANSITION_L` non serve alla generazione e manca.
+  Nell'ordine vanno solo i valori diversi dal default; un campo vuoto, non numerico o fuori limite
+  resta al default ed è marcato `aria-invalid`. `WIRE_SLOT_W` segue `CHANNEL_W` finché non lo si
+  cambia a mano. «Valori predefiniti» (`#tech-reset`) ripristina tutto. I valori cambiati compaiono
+  nel riepilogo di Richiedi e passano all'editor dei tracciati.
 - **more.** `#edit-paths`, `#restore-paths` e `#path-toolbar`. «Modifica tracciati» apre l'editor
   §5bis sopra l'anteprima. Cambiare testo, font o immagine scarta le modifiche dopo conferma. Diffusore
   e cornice stanno sulla barra dell'anteprima, non in questo foglio.
@@ -792,7 +849,7 @@ Ogni foglio è un `.pane[data-pane=…]`:
 
 Ogni cambio aggiorna il 3D quando è pronto (§5). Le scelte restano cambiando strumento. **v1.1**, oltre
 a quanto segnato sopra: prezzo indicativo, sfondi e quote dell'anteprima (12.3), bordo dritto/smussato,
-preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3 restano solo in admin.
+preventivo (12.8) e il pannello «Info» (12.9). Gli altri parametri di §3, oltre a quelli dello strumento Tecnica, restano solo in admin.
 
 ### 12.3 Anteprima ambientata
 
@@ -898,8 +955,10 @@ sovrapposto, chiudibile con Esc o con «Torna all'insegna», senza perdere lo st
 
 ### 12.9bis Scaricare l'STL
 
-La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. BOM, DXF e
-SVG restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL (test)» fa lo stesso
+La pagina cliente scarica gli STL come in §5 (Anteprima), con `CUSTOMER_STL_DOWNLOAD`. Con un
+fondale (§13) scarica anche `<nome>-<altezza>mm-fondale.stl` (la lastra, nella stessa posizione
+dell'housing) e `<nome>-<altezza>mm-fondale.svg` (il file di taglio laser). BOM, DXF e SVG
+dell'housing restano in admin. In `shop-test.html` il pulsante di prova «Scarica STL (test)» fa lo stesso
 export, per chi sta provando il flusso del §12.
 
 ### 12.10 Test
@@ -908,8 +967,71 @@ export, per chi sta provando il flusso del §12.
   migrati a v3 con stessi STL e BOM; hash malformato → avviso, nessuna eccezione; ordine oltre 8 kB
   → niente link, scaricamento `.json`.
 - Smoke (Playwright): la pagina si apre su «Ciao» a 390×844 e a 1280×800 e non scorre
-  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; ogni strumento apre
-  un solo `.pane` visibile; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
+  (`scrollWidth` / `scrollHeight` ≤ finestra) né in orizzontale né in verticale; su desktop tutte
+  le sezioni sono aperte e visibili; ogni strumento della barra apre la sua sezione e la porta in
+  vista, anche dopo che è stata chiusa; Richiedi mostra un solo `.pane`; la taglia L porta `heightMm` a 180 e il riepilogo mostra «18 cm»; su
   mobile «Fatto» chiude il foglio. **v1.1**: prezzo, taglia sotto il minimo disattivata con motivo,
   link che ricostruisce testo, font e altezza, «Info» che si apre e si chiude con Esc. Paper.js non
   si scarica finché l'editor non si apre.
+
+## 13. Fondale (lastra laser)
+
+Il fondale è facoltativo: una lastra dietro l'insegna, da tagliare al laser. Anteprima, STL e SVG di
+taglio vengono dagli stessi poligoni in mm (`src/geometry/plate.ts`, `buildPlate`): nessuna
+geometria solo visiva. `generate` restituisce `plate` (contorno, fori, misure, scelta) e `plateMesh`;
+senza fondale sono `null`.
+
+### Forme (`manifold-3d` CrossSection, giunzioni arrotondate)
+
+- `rect` «Rettangolare»: il rettangolo che contiene la sagoma dell'housing più il margine, angoli
+  raggiati di `PLATE_PARAMS.CORNER_R` (8 mm).
+- `contour` «Sagomato attorno ai LED»: offset della sagoma del margine; i buchi interni (l'occhiello
+  della «o») si riempiono. Se le lettere restano in più pezzi, una chiusura morfologica (offset in
+  più e poi in meno, raggi 10–160 mm) le unisce; se non basta, si usa l'inviluppo convesso con un
+  avviso.
+
+### Materiali
+
+| id | Etichetta | Spessore | Anteprima |
+|---|---|---|---|
+| `smoke` | Plexi nero trasparente | 3 mm | grigio fumé lucido semitrasparente, che sul grigio dell'anteprima si legge come nero |
+| `wood` | Legno | 4 mm | marrone opaco |
+
+Gli spessori sono segnaposto finché non si misurano i materiali acquistati (§10). La lastra sta fra
+Z = −spessore e Z = 0, cioè subito dietro il retro dell'housing: l'STL della lastra e quello
+dell'housing si allineano senza spostamenti. L'inquadratura dell'anteprima comprende la lastra.
+La lastra si disegna con normali per faccia (facce piane, nessuna sfumatura dei triangoli).
+La lastra sta davanti al muro e ne coprirebbe il bagliore del neon: lo riceve lei, dalla stessa
+texture del muro (`emissiveMap`, con le coordinate del piano XY), più intenso sul legno opaco e
+smorzato sul plexi lucido. Con un fondale la luce della stanza nelle viste accese è tre volte quella
+senza fondale, altrimenti la lastra sparirebbe nel nero.
+
+### Fori
+
+Tutti passanti, in `PLATE_PARAMS` (`src/config.ts`):
+
+- fissaggio sotto ogni ancoraggio dell'housing, Ø `FIX_HOLE_D` 3,4;
+- cavo principale, Ø `CABLE_HOLE_D`;
+- passaggio dei fili sotto ogni asola e tasca d'angolo, Ø `WIRE_HOLE_D` 6, e sotto le piazzole
+  dei puntini (Ø `DOT_WIRE_HOLE_D`): i fili fra gli spezzoni passano dietro la lastra (sul plexi si
+  vedono; resta una domanda aperta, §10);
+- solo per `rect`: quattro fori di montaggio a parete negli angoli, Ø `MOUNT_HOLE_D` 5 a
+  `MOUNT_INSET` 10 mm dal bordo. Un foro che finirebbe a meno di `MOUNT_CLEARANCE` 3 mm dalla
+  sagoma dell'insegna si toglie, con un avviso che suggerisce di aumentare il margine.
+
+Kerf per materiale (`PLATE_PARAMS.KERF`, oggi 0, DA TARARE sul laser): il contorno si allarga di
+kerf/2 e i fori si restringono di kerf/2, così le misure finali sono quelle nominali.
+
+### Export
+
+`fondale.svg` (`src/export/plate.ts`), in mm (`width`/`height` in mm, `viewBox` in mm), **visto dal
+retro come `back.dxf`**, così i due file si sovrappongono. Blu (`#0000ff`) = fori, da tagliare per
+primi; rosso (`#ff0000`) = contorno, per ultimo. Materiale, spessore e misure stanno in `<title>` e
+`<desc>`. `fondale.stl` è la lastra in 3D, per l'assemblaggio e per chi la stampa.
+
+### Test
+
+`test/plate.test.ts`: misure del rettangolo e spessore; un buco nella lastra per ogni foro; sagomato
+in un pezzo solo e più piccolo del rettangolo; fori di montaggio tolti con margine stretto; SVG in
+mm specchiato; il generatore produce il fondale solo se l'ordine lo chiede; il fondale passa per il
+link condiviso. Smoke: con il fondale il download dà quattro file, STL e SVG compresi.

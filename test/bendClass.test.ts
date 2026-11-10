@@ -140,22 +140,52 @@ describe('classificazione delle pieghe', () => {
     expect(model.bom.wireSlots).toBe(2);
   });
 
-  it('un puntino troppo piccolo resta spento e indica l\'altezza minima', () => {
+  it('un puntino più piccolo della pillola resta un LED, con un avviso sulla sporgenza', () => {
     const stem: Point[] = [
       [0, 0],
-      [0, 40],
+      [0, 30],
     ];
     const model = buildStrip(
       sourceFromPaths([{ points: stem }, { points: ring(0, 48, 2) }]),
       { ...DEFAULT_PARAMS, I_DOT_MODE: 'dot' },
       100,
     );
-    expect(model.chains.some((chain) => chain.dot)).toBe(false);
-    expect(model.unlit).toHaveLength(1);
-    expect(model.bom.segments.every((segment) => segment.ledCount > 0)).toBe(true);
-    const fallback = model.issues.find((issue) => issue.message.startsWith('Puntino troppo piccolo'));
-    expect(fallback).toBeTruthy();
-    expect(fallback!.message).toMatch(/Altezza minima \d+ mm/);
-    expect(fallback!.y).toBeCloseTo(48, 0);
+    const dots = model.chains.filter((chain) => chain.dot);
+    expect(dots).toHaveLength(1);
+    expect(model.unlit).toHaveLength(0);
+    expect(model.bom.segments.find((segment) => segment.id === dots[0]!.id)?.ledCount).toBe(1);
+    const note = model.issues.find((issue) => issue.message.startsWith('Puntino più piccolo della pillola'));
+    expect(note).toBeTruthy();
+    expect(note!.level).toBe('warning');
+    expect(note!.y).toBeCloseTo(48, 0);
+    expect(model.issues.some((issue) => issue.message.startsWith('Puntino troppo piccolo'))).toBe(false);
+  });
+
+  it('un accento isolato e corto diventa una pillola con un LED, senza asole', () => {
+    const stem: Point[] = [
+      [0, 0],
+      [0, 40],
+    ];
+    const accent: Point[] = [
+      [-4, 52],
+      [6, 60],
+    ];
+    const short: Point[] = [
+      [20, 52],
+      [24, 55],
+    ];
+    const model = buildStrip(
+      sourceFromPaths([{ points: stem }, { points: accent }, { points: short }]),
+      { ...DEFAULT_PARAMS, I_DOT_MODE: 'dot' },
+      100,
+    );
+    const marks = model.chains.filter((chain) => chain.dot);
+    expect(marks).toHaveLength(2);
+    for (const mark of marks) {
+      expect(mark.lengthMm).toBeGreaterThanOrEqual(DEFAULT_PARAMS.CUT_PITCH - 0.2);
+      expect(model.bom.segments.find((segment) => segment.id === mark.id)?.ledCount).toBe(1);
+    }
+    expect(model.issues.some((issue) => issue.message.includes('sotto il passo di taglio'))).toBe(false);
+    expect(model.bom.wireSlots).toBe(2);
   });
 });

@@ -4,6 +4,7 @@
 // ANCHOR_MIN_PER_SEGMENT se ci stanno.
 // Due asole DIN/DOUT vicine diventano una tasca: il filo fra gli spezzoni è 0 mm. Modulo puro.
 
+import { DOT_LED_COUNT } from '../geometry/lights';
 import type { ChainPath } from '../geometry/chain';
 import type { Point } from '../geometry/rasterize';
 import type { Params } from '../config';
@@ -306,7 +307,7 @@ export function buildBom(
     return {
       id: piece.id,
       lengthMm: round2(piece.lengthMm),
-      ledCount: Math.max(0, Math.round((litMm * params.LED_PER_M) / 1000)),
+      ledCount: piece.dot ? DOT_LED_COUNT : Math.max(0, Math.round((litMm * params.LED_PER_M) / 1000)),
       cutLengthMm: Math.floor((litMm + 1e-6) / pitch) * pitch,
       din: [round2(din.at[0]), round2(din.at[1])],
       dout: [round2(dout.at[0]), round2(dout.at[1])],

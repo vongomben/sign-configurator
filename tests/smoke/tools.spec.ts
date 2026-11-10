@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectClean, trackPage } from './guard';
 
-const TOOLS = ['text', 'font', 'size', 'color', 'image', 'more'] as const;
+const TOOLS = ['text', 'font', 'size', 'color', 'image', 'plate', 'tech', 'more'] as const;
 
 async function expectNoScroll(page: Page): Promise<void> {
   const box = await page.evaluate(() => ({
@@ -42,17 +42,26 @@ for (const viewport of [
     if (viewport.mobile) {
       await expect(page.locator('.pane:visible')).toHaveCount(0);
     } else {
-      await expect(page.locator('.pane:visible')).toHaveCount(1);
-      await expect(page.locator('.pane:visible')).toHaveAttribute('data-pane', 'text');
+      // Tutti gli strumenti in chiaro, uno sotto l'altro.
+      await expect(page.locator('.pane:visible')).toHaveCount(TOOLS.length);
+      await expect(page.locator('.section[open]')).toHaveCount(TOOLS.length);
     }
 
     for (const tool of TOOLS) {
       await page.locator(`[data-tool="${tool}"]`).click();
-      const visible = page.locator('.pane:visible');
-      await expect(visible).toHaveCount(1);
-      await expect(visible).toHaveAttribute('data-pane', tool);
+      const section = page.locator(`.section[data-section="${tool}"]`);
+      await expect(section).toHaveAttribute('open', '');
+      await expect(section.locator('summary')).toBeInViewport();
+      await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('.pane[data-pane="request"]')).toBeHidden();
       await expectNoScroll(page);
     }
+
+    // Una sezione chiusa si riapre dalla barra.
+    await page.locator('.section[data-section="font"] > summary').click();
+    await expect(page.locator('.section[data-section="font"]')).not.toHaveAttribute('open', '');
+    await page.locator('[data-tool="font"]').click();
+    await expect(page.locator('.section[data-section="font"]')).toHaveAttribute('open', '');
 
     await page.locator('[data-tool="size"]').click();
     await page.locator('.size-chip[data-size="180"]').click();

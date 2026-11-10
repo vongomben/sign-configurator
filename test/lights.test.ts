@@ -84,20 +84,20 @@ describe('punti luce', () => {
     expect(Math.hypot(first[0] - last[0], first[1] - last[1])).toBeGreaterThan(1);
   });
 
-  it('un puntino lungo CUT_PITCH non perde i LED delle asole', () => {
+  it('un puntino ha un solo LED, al centro', () => {
     const points: Point[] = [
       [0, 0],
       [DEFAULT_PARAMS.CUT_PITCH, 0],
     ];
     const lit = lightPointsFromChains([{ id: 1, points, closed: false, dot: true }], DEFAULT_PARAMS);
     const muted = lightPointsFromChains([{ id: 1, points, closed: false }], DEFAULT_PARAMS);
-    const count = Math.round((DEFAULT_PARAMS.CUT_PITCH * DEFAULT_PARAMS.LED_PER_M) / 1000);
-    expect(count).toBeGreaterThan(0);
-    expect(lit).toHaveLength(count);
+    expect(lit).toHaveLength(1);
+    expect(lit[0]!.pos[0]).toBeCloseTo(DEFAULT_PARAMS.CUT_PITCH / 2, 6);
+    expect(lit[0]!.pos[1]).toBeCloseTo(0, 6);
     expect(muted).toHaveLength(0);
   });
 
-  it('Ciao a 100 mm con Sacramento ha almeno un LED sul puntino', async () => {
+  it('Ciao a 100 mm con Sacramento ha un LED sul puntino, anche nella BOM', async () => {
     const heightMm = 100;
     const raster = await rasterize({ text: 'Ciao', fontId: 'sacramento', heightMm }, readPublic);
     const graph = buildGraph(raster);
@@ -118,10 +118,10 @@ describe('punti luce', () => {
       DEFAULT_PARAMS,
     );
     const ids = new Set(dots.map((chain) => chain.id));
-    expect(lights.filter((light) => ids.has(light.segment)).length).toBeGreaterThanOrEqual(1);
+    expect(lights.filter((light) => ids.has(light.segment)).length).toBe(dots.length);
     for (const dot of dots) {
       const segment = strip.bom.segments.find((item) => item.id === dot.id);
-      expect(segment?.ledCount).toBeGreaterThanOrEqual(1);
+      expect(segment?.ledCount).toBe(1);
       expect(segment?.cutLengthMm).toBe(DEFAULT_PARAMS.CUT_PITCH);
     }
   });

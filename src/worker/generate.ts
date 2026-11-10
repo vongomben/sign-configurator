@@ -1,4 +1,5 @@
 // [A]–[I] nel worker: dall'ordine alle mesh, ai fori e alla distinta (SPEC §5, §6).
+import { buildPlate, type PlateModel } from '../geometry/plate';
 import type { Mesh } from 'manifold-3d';
 import { resolveParams } from '../config';
 import type { Bom } from '../export/bom';
@@ -49,7 +50,13 @@ export interface GenerateResult {
   warnings: string[];
   /** Spezzoni dopo [D], prima di Chaikin. «Modifica tracciati» parte da qui. */
   segments: EditSegment[];
+  /** Fondale (SPEC §13), dietro l'housing fra Z = −spessore e 0. null senza fondale. */
+  plateMesh: MeshData | null;
+  plate: PlateSummary | null;
 }
+
+/** Il fondale senza la mesh: quanto serve all'SVG di taglio, al riepilogo e all'anteprima. */
+export type PlateSummary = Omit<PlateModel, 'solid'>;
 
 function editSegments(strip: StripModel): EditSegment[] {
   const count = Math.max(strip.paths.length, strip.chains.length);
@@ -172,6 +179,22 @@ export async function generateSign(order: SignOrder | OrderV1 | SignOrderV3, rea
   try {
     const housingMesh = copyMesh(housing.solid.getMesh());
     const diffuserMesh = copyMesh(housing.diffuser.getMesh());
+    let plateMesh: MeshData | null = null;
+    let plate: PlateSummary | null = null;
+    if (current.plate) {
+      const built = buildPlate(wasm, housing, current.plate);
+      if (built) {
+        try {
+          plateMesh = copyMesh(built.solid.getMesh());
+          if (built.solid.status() !== 'NoError') warnings.push(`Fondale non manifold (${built.solid.status()}).`);
+        } finally {
+          built.solid.delete();
+        }
+        const { solid: _solid, ...summary } = built;
+        plate = summary;
+        warnings.push(...built.warnings);
+      }
+    }
     if (housing.solid.status() !== 'NoError') warnings.push(`Housing non manifold (${housing.solid.status()}).`);
     if (housing.diffuser.status() !== 'NoError') warnings.push(`Diffusore non manifold (${housing.diffuser.status()}).`);
     return {
@@ -198,6 +221,8 @@ export async function generateSign(order: SignOrder | OrderV1 | SignOrderV3, rea
       bom: strip.bom,
       warnings,
       segments: editSegments(strip),
+      plateMesh,
+      plate,
     };
   } finally {
     housing.solid.delete();

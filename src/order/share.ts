@@ -1,5 +1,6 @@
 // Link e file dell'ordine (SPEC §12.6). Mai un'eccezione: un hash rotto diventa un avviso.
 
+import { plateChoiceOf } from '../geometry/plate';
 import { GENERATOR_VERSION, type CuspMode, type EdgeProfile, type IDotMode, type Params } from '../config';
 import {
   DEFAULT_CUSTOMER,
@@ -89,6 +90,7 @@ const KNOWN_ROOT = new Set([
   'paths',
   'crossings',
   'customer',
+  'plate',
   'text',
   'fontId',
 ]);
@@ -398,6 +400,7 @@ function orderFromRecord(record: Record<string, unknown>, warnings: string[]): S
       params,
       paths: pathsOf(record.paths, warnings),
       crossings: crossingsOf(record.crossings, warnings),
+      plate: plateChoiceOf(record.plate, warnings),
     };
     return migrateOrder(v2);
   }
@@ -415,6 +418,7 @@ function orderFromRecord(record: Record<string, unknown>, warnings: string[]): S
       paths: pathsOf(record.paths, warnings),
       crossings: crossingsOf(record.crossings, warnings),
       customer: customerOf(record.customer, warnings),
+      plate: plateChoiceOf(record.plate, warnings),
     });
   }
   warnings.push('Versione dell\'ordine non riconosciuta.');

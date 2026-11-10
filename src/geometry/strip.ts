@@ -9,7 +9,7 @@ import type { GraphEdge, GraphNode } from './graph';
 import type { Point } from './rasterize';
 import { segmentGraph, type SegmentNotice } from './segment';
 import { smoothPolyline } from './smooth';
-import { centerlineClearance, validateStrip, type ValidationIssue } from './validate';
+import { centerlineClearance, touchPoints, validateStrip, type ValidationIssue } from './validate';
 
 export interface SegmentSource {
   nodes: readonly GraphNode[];
@@ -514,12 +514,64 @@ function dotPoly(loop: SegmentNotice): Point[] {
   return radius > 0.2 ? circlePoints(loop.x, loop.y, radius) : [];
 }
 
+function pointSegmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 1e-12 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+function distanceToPiece(p: Point, piece: Piece): number {
+  let best = Infinity;
+  for (let i = 1; i < piece.points.length; i++) best = Math.min(best, pointSegmentDistance(p, piece.points[i - 1]!, piece.points[i]!));
+  return best;
+}
+
+/**
+ * Segni isolati (l'accento di «ì», «è»…): un tratto aperto che non tocca nessun altro e che è troppo
+ * corto per avere due asole e la luce minima. Come il puntino (I_DOT_MODE «dot») diventa uno
+ * spezzone a sé senza asole, con i fori sotto le piazzole e un LED; sotto il passo di taglio si
+ * allunga a CUT_PITCH, centrato e orientato come il tratto.
+ */
+function markPieces(pieces: readonly Piece[], params: Params, minOpen: number): Piece[] {
+  if (params.I_DOT_MODE !== 'dot') return pieces.slice();
+  const near = Math.max(params.CORNER_MERGE_DIST, params.CROSSING_GAP * 2 + 1.5);
+  return pieces.map((piece, index) => {
+    if (piece.closed || piece.dot || piece.points.length < 2) return piece;
+    const length = lengthOf(piece.points);
+    if (length >= minOpen) return piece;
+    const alone = pieces.every(
+      (other, j) => j === index || other.points.length < 2 || piece.points.every((p) => distanceToPiece(p, other) > near),
+    );
+    if (!alone) return piece;
+    if (length >= params.CUT_PITCH) return { ...piece, points: piece.points.slice(), dot: true };
+    const first = piece.points[0]!;
+    const last = piece.points[piece.points.length - 1]!;
+    const chord = Math.hypot(last[0] - first[0], last[1] - first[1]);
+    const dir: Point = chord > 1e-6 ? [(last[0] - first[0]) / chord, (last[1] - first[1]) / chord] : [1, 0];
+    const mid: Point = [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2];
+    const half = params.CUT_PITCH / 2;
+    return {
+      points: orientOpen([
+        [mid[0] - dir[0] * half, mid[1] - dir[1] * half],
+        [mid[0] + dir[0] * half, mid[1] + dir[1] * half],
+      ]),
+      closed: false,
+      reference: piece.reference,
+      dot: true,
+    };
+  });
+}
+
 function applyDots(segments: Piece[], notices: SegmentNotice[], params: Params, heightMm: number, strokeWidthMm: number): {
   pieces: Piece[];
   notices: SegmentNotice[];
   unlit: UnlitDot[];
   /** Puntini ripiegati su un rilievo, con l'altezza a cui si accenderebbero. */
   fallback: { loop: SegmentNotice; heightMm: number | null }[];
+  /** Puntini accesi la cui pillola esce dal disegno più di DOT_OVERHANG_MM. */
+  oversize: { loop: SegmentNotice; overhangMm: number }[];
 } {
   const loops = notices.filter((notice) => notice.kind === 'excluded');
   const rest = notices.filter((notice) => notice.kind !== 'excluded');
@@ -527,12 +579,19 @@ function applyDots(segments: Piece[], notices: SegmentNotice[], params: Params, 
     const dashes: Piece[] = [];
     const unlit: UnlitDot[] = [];
     const fallback: { loop: SegmentNotice; heightMm: number | null }[] = [];
+    const oversize: { loop: SegmentNotice; overhangMm: number }[] = [];
     for (const loop of loops) {
       const dir = tangentNear([loop.x, loop.y], segments);
       const center: Point = [loop.x, loop.y];
       const poly = inkOutline(dotPoly(loop), center, strokeWidthMm);
       const asDot = params.I_DOT_MODE === 'dot';
-      const fits = asDot ? bodyOverhang(poly, center, dir, params) <= params.DOT_OVERHANG_MM : dashFits(center, dir, params, poly);
+      // Il puntino è sempre un LED: se la pillola esce dal disegno lo si dice, ma resta acceso.
+      // Se tocca l'asta, la fusione (§5 [G]) blocca l'invio e indica l'altezza che li separa.
+      if (asDot) {
+        const overhangMm = bodyOverhang(poly, center, dir, params);
+        if (overhangMm > params.DOT_OVERHANG_MM) oversize.push({ loop, overhangMm });
+      }
+      const fits = asDot ? true : dashFits(center, dir, params, poly);
       if (fits) {
         const piece = dashPiece(loop, segments, params.CUT_PITCH);
         dashes.push(asDot ? { ...piece, dot: true } : piece);
@@ -544,7 +603,7 @@ function applyDots(segments: Piece[], notices: SegmentNotice[], params: Params, 
         });
       }
     }
-    return { pieces: [...segments, ...dashes], notices: rest, unlit, fallback };
+    return { pieces: [...segments, ...dashes], notices: rest, unlit, fallback, oversize };
   }
   if (params.I_DOT_MODE === 'unlit') {
     const unlit = loops.map((loop) => ({
@@ -554,9 +613,9 @@ function applyDots(segments: Piece[], notices: SegmentNotice[], params: Params, 
       points: loop.points,
     }));
     const flagged = loops.map((loop): SegmentNotice => ({ ...loop, kind: 'unlit' }));
-    return { pieces: segments, notices: [...rest, ...flagged], unlit, fallback: [] };
+    return { pieces: segments, notices: [...rest, ...flagged], unlit, fallback: [], oversize: [] };
   }
-  return { pieces: segments, notices, unlit: [], fallback: [] };
+  return { pieces: segments, notices, unlit: [], fallback: [], oversize: [] };
 }
 
 function classify(pieces: readonly Piece[], notices: readonly SegmentNotice[], params: Params, smooth = true): {
@@ -581,7 +640,7 @@ function compute(source: SegmentSource, params: Params, heightMm: number): Compu
     minOpen,
   );
   const dots = applyDots(base, segmented.notices, params, heightMm, source.strokeWidthMm ?? 0);
-  let pieces = orderPieces(joinShort(dots.pieces, minOpen));
+  let pieces = orderPieces(markPieces(joinShort(dots.pieces, minOpen), params, minOpen));
   let { chains, issues } = classify(pieces, dots.notices, params);
 
   if (params.CUSP_MODE === 'split' && issues.some((issue) => issue.bend === 'spigolo')) {
@@ -601,11 +660,23 @@ function compute(source: SegmentSource, params: Params, heightMm: number): Compu
       for (const points of parts) next.push({ points, closed: false, reference: piece.reference, dot: piece.dot });
     }
     if (changed) {
-      pieces = orderPieces(joinShort(next, minOpen));
+      pieces = orderPieces(markPieces(joinShort(next, minOpen), params, minOpen));
       ({ chains, issues } = classify(pieces, dots.notices, params));
     }
   }
 
+  for (const item of dots.oversize) {
+    const loop = item.loop;
+    issues.push({
+      level: 'warning',
+      bend: null,
+      segmentId: null,
+      radiusMm: loop.radiusMm,
+      x: loop.x,
+      y: loop.y,
+      message: `Puntino più piccolo della pillola del LED: sporge di ${item.overhangMm.toFixed(1)} mm dal disegno, in (${loop.x.toFixed(1)}, ${loop.y.toFixed(1)}).`,
+    });
+  }
   for (const item of dots.fallback) {
     const loop = item.loop;
     const where = `in (${loop.x.toFixed(1)}, ${loop.y.toFixed(1)})`;
@@ -719,10 +790,11 @@ function suggest(
 
 function finishModel(model: Computed, source: SegmentSource, params: Params, heightMm: number): StripModel {
   const crossings = model.notices.filter((notice) => notice.kind === 'crossing').map((notice): Point => [notice.x, notice.y]);
+  const joints = touchPoints(model.paths, params);
   const clash = centerlineClearance(
     model.chains.map((chain) => ({ points: chain.smooth, closed: chain.closed })),
     params,
-    crossings,
+    [...crossings, ...joints],
   );
   let clearanceH = MIN_HEIGHT_MM;
   if (clash && clash.distance < clash.limit - 1e-6) {
@@ -768,7 +840,7 @@ export function buildStripFromPieces(
       reference: true,
       dot: piece.dot === true,
     }));
-  pieces = orderPieces(joinShort(pieces, minOpen));
+  pieces = orderPieces(markPieces(joinShort(pieces, minOpen), params, minOpen));
   const notices = extras.notices.map((notice) => ({
     ...notice,
     points: notice.points.map((point): Point => [point[0], point[1]]),
@@ -794,7 +866,7 @@ export function buildStripFromPieces(
       for (const points of parts) next.push({ points, closed: false, reference: piece.reference, dot: piece.dot });
     }
     if (changed) {
-      pieces = orderPieces(joinShort(next, minOpen));
+      pieces = orderPieces(markPieces(joinShort(next, minOpen), params, minOpen));
       ({ chains, issues } = classify(pieces, notices, params, false));
     }
   }

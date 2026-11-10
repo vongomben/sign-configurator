@@ -6,9 +6,10 @@
   --sheet: #f6f1ea;
   --line: rgba(28, 25, 22, 0.12);
   --dock: #161311;
+  --stage: #3a3a3e;
   color: var(--ink);
   font-family: system-ui, sans-serif;
-  background: #000;
+  background: var(--stage);
 }
 
 * { box-sizing: border-box; }
@@ -45,12 +46,12 @@ select {
 
 .shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   max-height: 100%;
   overflow: hidden;
-  background: #000;
+  background: var(--stage);
 }
 
 .stage-wrap {
@@ -58,6 +59,7 @@ select {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  grid-column: 1;
   grid-row: 1;
 }
 
@@ -81,7 +83,8 @@ select {
   height: 100% !important;
 }
 
-.shell:not([data-sheet="more"]) #path-editor {
+.shell:not([data-sheet="config"]) #path-editor,
+.shell:not(:has(.section[data-section="more"][open])) #path-editor {
   display: none !important;
 }
 
@@ -258,6 +261,7 @@ select {
 .sheet {
   display: flex;
   flex-direction: column;
+  grid-column: 1;
   grid-row: 2;
   min-height: 0;
   max-height: 48dvh;
@@ -274,7 +278,10 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px 0;
+  /* Alta quanto «Fatto» anche quando su desktop non c'è: il contenuto non le scorre addosso. */
+  min-height: 54px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
 }
 
 .sheet-bar h2 {
@@ -293,6 +300,50 @@ select {
   flex-direction: column;
   gap: 12px;
 }
+
+/* Sezioni richiudibili: tutti gli strumenti in un solo foglio. */
+.sections {
+  display: flex;
+  flex-direction: column;
+}
+
+.section {
+  border-bottom: 1px solid var(--line);
+}
+
+.section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.section > summary::-webkit-details-marker { display: none; }
+
+.section > summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.section[open] > summary::after { transform: rotate(-135deg); }
+
+.section > summary:focus-visible {
+  outline: 2px solid var(--neon);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.section > .pane { padding-bottom: 16px; }
 
 .primary,
 #sheet-close,
@@ -326,27 +377,25 @@ input[name="text"] {
 }
 
 .font-row {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-  padding-bottom: 4px;
+  /* Griglia compatta: tutti i font in vista, niente scorrimento orizzontale. */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .font-card {
-  flex: 0 0 72%;
-  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 128px;
-  padding: 14px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 8px 10px;
   border: 0;
   border-radius: 16px;
   background: #fff;
-  text-align: left;
+  text-align: center;
   box-shadow: inset 0 0 0 1px var(--line);
   cursor: pointer;
 }
@@ -356,19 +405,20 @@ input[name="text"] {
 }
 
 .font-sample {
-  font-size: 2rem;
+  max-width: 100%;
+  font-size: 1.9rem;
   line-height: 1.1;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.font-card[data-font="sacramento"] .font-sample { font-family: sacramento, cursive; }
+.font-card[data-font="sacramento"] .font-sample { font-family: sacramento, cursive; font-size: 2.4rem; }
 .font-card[data-font="neonderthaw"] .font-sample { font-family: neonderthaw, cursive; }
 
 .font-name {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
 }
 
 .sizes {
@@ -587,18 +637,143 @@ input[type="color"] {
   color: #9d1c1c;
 }
 
+/* Fondale: forme e materiali vanno a capo, uno per riga se lo spazio non basta. */
+.plate-shape,
+.plate-material {
+  flex-wrap: wrap;
+}
+
+.plate-shape label,
+.plate-material label {
+  flex: 1 1 140px;
+  padding: 0 12px;
+  text-align: center;
+  font-size: 0.92rem;
+}
+
+.pane .is-dimmed {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tech-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.tech-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tech-group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.tech-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.tech-field > span:first-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.95rem;
+}
+
+.tech-field small {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+}
+
+.tech-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tech-input span { width: 1.6em; }
+
+.tech-field input,
+.tech-field select {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sheet);
+  color: var(--ink);
+  padding: 0 8px;
+}
+
+.tech-field input {
+  width: 5.5rem;
+  text-align: right;
+}
+
+.tech-field select { max-width: 12rem; }
+
+.tech-field input[aria-invalid="true"] {
+  border-color: #c4302b;
+  box-shadow: 0 0 0 1px #c4302b;
+}
+
 .request-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  /* Sempre in vista in fondo al foglio, anche quando il riepilogo è lungo e scorre. */
+  position: sticky;
+  bottom: -14px;
+  margin: 0 -14px -14px;
+  padding: 10px 14px 14px;
+  background: var(--sheet);
+  border-top: 1px solid var(--line);
 }
 
+/* Con la barra a destra l'anteprima è più stretta: sotto i 900 px la cornice scende sotto il diffusore. */
+@media (max-width: 899px) {
+  .hud { flex-wrap: nowrap; }
+
+  .wall-field {
+    position: absolute;
+    top: calc(100% + 54px);
+    left: 0;
+    flex-direction: row;
+    min-height: 36px;
+    margin: 0;
+  }
+
+  #open-request { margin-left: auto; }
+}
+
+/* Barra verticale sul bordo destro, alta quanto lo schermo. */
 .dock {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-row: 3;
-  min-height: 64px;
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(52px, auto);
+  align-content: center;
+  gap: 4px;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(4px + env(safe-area-inset-top)) calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) 4px;
   background: var(--dock);
   color: #f6f1ea;
 }
@@ -640,21 +815,24 @@ input[type="color"] {
 
 @media (min-width: 900px) {
   .shell {
-    grid-template-columns: minmax(0, 1fr) 400px;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 400px 76px;
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .stage-wrap { grid-column: 1; grid-row: 1; }
 
   .dock {
-    grid-column: 1;
-    grid-row: 2;
+    grid-column: 3;
+    grid-row: 1;
+    grid-auto-rows: minmax(60px, auto);
   }
+
+  .dock button { font-size: 0.72rem; }
 
   .sheet {
     display: flex;
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
     max-height: none;
     height: 100%;
     border-radius: 0;
@@ -663,5 +841,7 @@ input[type="color"] {
 
   .shell[data-sheet=""] .sheet { display: flex; }
 
-  .font-card { flex-basis: 78%; }
+  /* Su desktop il foglio di configurazione resta aperto: «Fatto» serve solo a lasciare Richiedi. */
+  .shell[data-sheet="config"] #sheet-close { display: none; }
+
 }
