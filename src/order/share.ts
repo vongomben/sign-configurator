@@ -25,6 +25,7 @@ import {
   type OrderSource,
   type OrderV1,
   type PlateChoice,
+  type PlugType,
   type PlateMaterial,
   type PlateShape,
   type SignOrder,
@@ -349,7 +350,11 @@ function customerOf(value: unknown, warnings: string[]): CustomerChoices {
     else warnings.push('Diffusore non valido: lasciato attivo.');
   }
   if (value.mount !== undefined && value.mount !== 'wall') warnings.push('Fissaggio sconosciuto: usato il muro.');
-  if (value.plug !== undefined && value.plug !== 'EU') warnings.push('Spina sconosciuta: usata la EU.');
+  if (value.plug !== undefined) {
+    const plug = oneOf(value.plug, ['EU', 'UK', 'CH', 'US'] as const satisfies readonly PlugType[]);
+    if (plug) customer.plug = plug;
+    else warnings.push('Spina sconosciuta: usata la EU.');
+  }
   if (value.proof !== undefined) {
     if (typeof value.proof === 'boolean') customer.proof = value.proof;
     else warnings.push('Bozza non valida: lasciata attiva.');

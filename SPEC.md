@@ -653,7 +653,7 @@ freccia su ogni spezzone.
 ```
 
 - `customer` raccoglie le scelte del cliente che **non cambiano la geometria**: `effect`
-  (`"colore fisso"` | `"arcobaleno"`), `diffuser`, `mount` (`"wall"`), `plug` (`"EU"`), `proof`
+  (`"colore fisso"` | `"arcobaleno"`), `diffuser`, `mount` (`"wall"`), `plug` (`"EU"` | `"UK"` | `"CH"` | `"US"`, predefinita `"EU"`; sconosciuta → EU con avviso), `proof`
   (bozza di approvazione). Il diffusore cambia solo se `diffuser.stl` si esporta; il profilo dei bordi
   e lo spessore della cornice restano in `params` (`EDGE_PROFILE`, `WALL`), come oggi.
 - `sizePreset` è informativo: fa fede `heightMm`. `pricingVersion` fissa la tabella prezzi (§12.5).
@@ -831,8 +831,15 @@ copre. All'apertura nessun foglio è aperto.
   Fra quel blocco e «Richiedi» (`#open-request`, nel colore scelto, con un leggero alone) c'è
   `input name="wallMm"` (`WALL`, 1,6–5 mm). Sotto i 900 px, con l'anteprima ristretta dalla barra,
   la cornice scende in una terza riga sotto il diffusore, a sinistra. In basso a sinistra, pillola scura, `#preview-status` (resta `data-generation`). In basso a
-  destra, se la distinta conosce l'alimentatore, pillola scura `#preview-supply` con tensione e
-  ampere consigliati (`5 V · 9 A`): bilancia il conteggio dei LED. Senza LED resta nascosta.
+  destra, affiancate (`.stage-power`): la **spina** e l'alimentatore. La spina è una pillola scura
+  (`label.plug-pill`) con il disegno della faccia della spina, la parola «Spina» e un menu
+  (`select name="plug"`): EU (Europa, tipo C/F), UK (Regno Unito e Irlanda, tipo G), CH (Svizzera,
+  tipo J), US (Stati Uniti e Canada, tipo A/B), in `src/ui/plugs.ts`. Il disegno e il title seguono la
+  scelta; va in `customer.plug` e nel riepilogo di Richiedi («Spina: … · alimentatore 100–240 V»).
+  Gli alimentatori sono universali, 100–240 V in ingresso: cambia solo la forma della spina, non la
+  tensione di rete. Accanto, se la distinta conosce l'alimentatore, pillola scura `#preview-supply`
+  con tensione e ampere consigliati (`5 V · 8 A`), rossa oltre i limiti del controller: bilancia il
+  conteggio dei LED. Senza LED resta nascosta.
 - **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
   schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno
   sotto l'altro, centrati. Ciascuno con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
