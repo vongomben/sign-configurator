@@ -21,7 +21,13 @@ export const BANK_STRAIGHT = 40;
 const BANK_SWEEP_DEG = 90;
 export const JOINT_ANGLES_DEG: readonly number[] = [90, 90, 120];
 export const JOINT_STRAIGHT = 40;
-export const VARIANT_WIDTHS: readonly number[] = [5.4, 5.8];
+/** Varianti di tolleranza del canale: quello in uso e uno più largo di questo passo, mm. */
+export const VARIANT_STEP = 0.4;
+
+/** Le due larghezze delle varianti: il canale dei parametri e +VARIANT_STEP. */
+export function variantWidths(channelW: number): number[] {
+  return [channelW, Math.round((channelW + VARIANT_STEP) * 100) / 100];
+}
 
 const ARC_STRAIGHT = 30;
 const ARC_SWEEP_DEG = 180;
@@ -70,7 +76,7 @@ export type BendTestParams = Pick<
 export interface BendTestOptions {
   kind: BendTestKind;
   params?: Partial<BendTestParams>;
-  /** true: un pezzo per ogni CHANNEL_W in VARIANT_WIDTHS, marcati con 1/2 tacche. */
+  /** true: un pezzo per ogni larghezza di `variantWidths(CHANNEL_W)`, marcati con 1/2 tacche. */
   variants?: boolean;
 }
 
@@ -792,7 +798,7 @@ export function resolveBendTestParams(overrides: Partial<BendTestParams> = {}): 
   };
 }
 
-/** Con i default l'asola è larga quanto il canale, anche sulle varianti 5.4 / 5.8. */
+/** Con i default l'asola è larga quanto il canale, anche sulle varianti (canale e +0,4). */
 function channelParams(base: BendTestParams, channelW: number): BendTestParams {
   const followsChannel = Math.abs(base.WIRE_SLOT_W - base.CHANNEL_W) < 1e-9;
   return {
@@ -807,7 +813,7 @@ export async function buildBendTest(options: BendTestOptions): Promise<BendTestR
   const base = resolveBendTestParams(options.params);
   const path = bendTestPath(options.kind, base.HINGE_PITCH);
   const specs = options.variants
-    ? VARIANT_WIDTHS.map((w, i) => ({ channelW: w, notches: i + 1 }))
+    ? variantWidths(base.CHANNEL_W).map((w, i) => ({ channelW: w, notches: i + 1 }))
     : [{ channelW: base.CHANNEL_W, notches: 0 }];
 
   // Lo smusso dipende da WALL e CHANNEL_DEPTH, uguali per tutte le varianti.

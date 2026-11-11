@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Manifold, Vec2 } from 'manifold-3d';
-import { DEFAULT_PARAMS, totalHeight } from '../src/config';
+import { COB_5MM, totalHeight } from '../src/config';
 import { toDxf } from '../src/export/dxf';
 import { manifoldToStl } from '../src/export/stl';
 import { wireSlotSection } from '../src/geometry/holes';
@@ -21,7 +21,18 @@ import {
 /** Marcature 1+2+3+4+5 più le 2 asole. Lo smusso del labbro non è un foro in più. */
 const HOLES = 15 + 2;
 
-const P = resolveBendTestParams();
+/**
+ * I pezzi di prova sono disegnati per la COB da 5 mm (archi fino a R7): i test li controllano con
+ * quella striscia, qualunque sia la striscia standard.
+ */
+const COB = {
+  STRIP_W: COB_5MM.STRIP_W,
+  STRIP_T: COB_5MM.STRIP_T,
+  CHANNEL_W: COB_5MM.CHANNEL_W,
+  WIRE_SLOT_W: COB_5MM.CHANNEL_W,
+  CHANNEL_DEPTH: 8,
+};
+const P = resolveBendTestParams(COB);
 const outerHalf = P.CHANNEL_W / 2 + P.WALL;
 const KINDS: BendTestKind[] = ['arcs', 'corners'];
 
@@ -238,7 +249,7 @@ describe('bend test: pezzi D ed E', () => {
     expect(markHoleCenters(path)).toHaveLength(10);
     expect(bankedChannelHalf(P.STRIP_W, P.STRIP_T, P.CHANNEL_W, 20)).toBeGreaterThan(P.CHANNEL_W / 2);
 
-    const r = await buildBendTest({ kind: 'bank' });
+    const r = await buildBendTest({ kind: 'bank', params: COB });
     try {
       expect(r.status).toBe('NoError');
       expect(r.expectedHoles).toBe(12);
@@ -263,7 +274,7 @@ describe('bend test: pezzi D ed E', () => {
     const path = bendTestPath('joints');
     expect(path.bends.map((b) => b.label)).toEqual([90, 90, 120]);
     expect(markHoleCenters(path)).toHaveLength(6);
-    const r = await buildBendTest({ kind: 'joints' });
+    const r = await buildBendTest({ kind: 'joints', params: COB });
     try {
       expect(r.status).toBe('NoError');
       expect(r.expectedHoles).toBe(11);
@@ -276,7 +287,7 @@ describe('bend test: pezzi D ed E', () => {
 
 describe('bend test: solidi', () => {
   it('A singolo: manifold, 15 fori + 2 asole passanti, dimensioni attese', async () => {
-    const r = await buildBendTest({ kind: 'arcs' });
+    const r = await buildBendTest({ kind: 'arcs', params: COB });
     try {
       expect(r.status).toBe('NoError');
       expect(r.expectedHoles).toBe(HOLES);
@@ -288,7 +299,7 @@ describe('bend test: solidi', () => {
       expect(min[1]).toBeCloseTo(-25 - outerHalf, 2);
       expect(max[1]).toBeCloseTo(70 + outerHalf, 2);
       expect(min[2]).toBeCloseTo(0, 6);
-      expect(max[2]).toBeCloseTo(totalHeight(DEFAULT_PARAMS), 6);
+      expect(max[2]).toBeCloseTo(totalHeight(P), 6);
 
       const hole = (z: number, y: number, x = 0) => sliceArea(r.manifold, z, square([x, y], 0.03)).then((a) => a < 1e-8);
       const wall = (z: number, y: number, x = 0) => sliceArea(r.manifold, z, square([x, y], 0.03)).then((a) => a > 0.002);
@@ -311,12 +322,12 @@ describe('bend test: solidi', () => {
   });
 
   it('B singolo: manifold, 15 fori + 2 asole passanti', async () => {
-    const r = await buildBendTest({ kind: 'corners' });
+    const r = await buildBendTest({ kind: 'corners', params: COB });
     try {
       expect(r.status).toBe('NoError');
       expect(r.expectedHoles).toBe(HOLES);
       expect(r.pieces[0]!.genus).toBe(HOLES);
-      expect(r.bounds.max[2] - r.bounds.min[2]).toBeCloseTo(totalHeight(DEFAULT_PARAMS), 6);
+      expect(r.bounds.max[2] - r.bounds.min[2]).toBeCloseTo(totalHeight(P), 6);
     } finally {
       r.manifold.delete();
     }
@@ -324,7 +335,7 @@ describe('bend test: solidi', () => {
 
   for (const kind of KINDS) {
     it(`${kind}: 2 varianti separate (5.4 / 5.8), 1 e 2 tacche, genus = fori`, async () => {
-      const r = await buildBendTest({ kind, variants: true });
+      const r = await buildBendTest({ kind, variants: true, params: COB });
       try {
         expect(r.status).toBe('NoError');
         expect(r.pieces.map((p) => p.channelW)).toEqual([5.4, 5.8]);
@@ -339,7 +350,7 @@ describe('bend test: solidi', () => {
     });
 
     it(`${kind}: STL riletto come triangoli sciolti torna un solido chiuso con gli stessi fori`, async () => {
-      const r = await buildBendTest({ kind, variants: true });
+      const r = await buildBendTest({ kind, variants: true, params: COB });
       const { Manifold, Mesh } = await getManifold();
       const stl = manifoldToStl(r.manifold);
       const volume = r.manifold.volume();

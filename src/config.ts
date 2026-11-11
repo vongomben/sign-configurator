@@ -79,7 +79,7 @@ export type IDotMode = 'omit' | 'dash' | 'dot' | 'unlit';
 
 /**
  * Misure della striscia LED. R_MIN e MIN_LETTER_H non stanno qui: si ricavano dal profilo.
- * Oggi c'è solo la COB da 5 mm; le prossime strisce si aggiungono a STRIP_PROFILES.
+ * Le strisce si aggiungono a STRIP_PROFILES; DEFAULT_STRIP è quella standard.
  */
 export interface StripProfile {
   id: string;
@@ -106,8 +106,25 @@ export const COB_5MM: StripProfile = Object.freeze({
   LED_PER_M: 160,
 });
 
-export const STRIP_PROFILES: readonly StripProfile[] = Object.freeze([COB_5MM]);
-export const DEFAULT_STRIP: StripProfile = COB_5MM;
+/**
+ * Striscia standard: larga 10 mm, spessa 6 mm (SPEC §2). Canale con la stessa tolleranza
+ * della COB (+0,4 mm). Cerniere, piega massima e passo di taglio DA MISURARE con il bend
+ * test: per ora quelli della COB.
+ */
+export const STRIP_10MM: StripProfile = Object.freeze({
+  id: 'strip-10mm',
+  name: 'Striscia 10 × 6 mm',
+  STRIP_W: 10.0,
+  STRIP_T: 6.0,
+  CHANNEL_W: 10.4,
+  HINGE_PITCH: 10.0,
+  HINGE_MAX_DEG: 40,
+  CUT_PITCH: 10.0,
+  LED_PER_M: 144,
+});
+
+export const STRIP_PROFILES: readonly StripProfile[] = Object.freeze([STRIP_10MM, COB_5MM]);
+export const DEFAULT_STRIP: StripProfile = STRIP_10MM;
 
 export interface Params {
   // Hardware (SPEC §2): copiati dal profilo striscia
@@ -193,7 +210,8 @@ export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
   STRIP_V: 5,
 
   CHANNEL_W: DEFAULT_STRIP.CHANNEL_W,
-  CHANNEL_DEPTH: 8.0,
+  /** Striscia (6 mm) più 6 mm fra i LED e il diffusore, come con la COB. */
+  CHANNEL_DEPTH: 12.0,
   WALL: 2.2,
   WALL_MIN: 1.2,
   MIN_GAP: 1.0,
@@ -205,7 +223,7 @@ export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
   ANCHOR_BOSS: false,
   ANCHOR_BOSS_D: 8,
   ANCHOR_BOSS_H: 6,
-  WIRE_SLOT_W: 5.4,
+  WIRE_SLOT_W: DEFAULT_STRIP.CHANNEL_W,
   WIRE_SLOT_L: 6.0,
   SLOT_LIP_CHAMFER: 1.0,
   CABLE_HOLE_D: 6.0,

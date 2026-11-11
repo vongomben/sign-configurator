@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrossSection } from 'manifold-3d';
-import { DEFAULT_PARAMS, type EdgeProfile } from '../src/config';
+import { COB_5MM, DEFAULT_PARAMS, type EdgeProfile } from '../src/config';
 import { MIN_TOP_WALL, planChamfer, type EdgeProfileParams } from '../src/geometry/edgeProfile';
 import { getManifold } from '../src/geometry/manifold';
 import {
@@ -20,6 +20,8 @@ const SQUARE_BASELINE: Record<'arcs' | 'corners', { volume: number; tris: number
 };
 
 const base: EdgeProfileParams = DEFAULT_PARAMS;
+/** I pezzi di prova sono disegnati per la COB da 5 mm. */
+const COB = { STRIP_W: COB_5MM.STRIP_W, STRIP_T: COB_5MM.STRIP_T, CHANNEL_W: COB_5MM.CHANNEL_W, WIRE_SLOT_W: COB_5MM.CHANNEL_W, CHANNEL_DEPTH: 8 };
 const plan = (o: Partial<EdgeProfileParams>) => planChamfer({ ...base, ...o });
 
 function perimeter(cs: CrossSection): number {
@@ -82,7 +84,7 @@ describe('planChamfer', () => {
 describe('profilo dei bordi sui pezzi di prova', () => {
   for (const kind of KINDS) {
     it(`${kind} square: geometria identica a prima (volume e triangoli)`, async () => {
-      const r = await buildBendTest({ kind, params: { EDGE_PROFILE: 'square' } });
+      const r = await buildBendTest({ kind, params: { ...COB, EDGE_PROFILE: 'square' } });
       try {
         expect(r.manifold.volume()).toBeCloseTo(SQUARE_BASELINE[kind].volume, 3);
         expect(r.manifold.numTri()).toBe(SQUARE_BASELINE[kind].tris);
@@ -93,7 +95,7 @@ describe('profilo dei bordi sui pezzi di prova', () => {
 
     it(`${kind}: manifold e genus invariato per tutti i profili, volume tolto come atteso`, async () => {
       const wasm = await getManifold();
-      const P = resolveBendTestParams();
+      const P = resolveBendTestParams(COB);
       const channel = channelSection(wasm, bendTestPath(kind, P.HINGE_PITCH), P);
       const outline = channel.offset(P.WALL, 'Round', 2, 96);
       const pOuter = perimeter(outline);
@@ -101,13 +103,13 @@ describe('profilo dei bordi sui pezzi di prova', () => {
       outline.delete();
       channel.delete();
 
-      const square = await buildBendTest({ kind, params: { EDGE_PROFILE: 'square' } });
+      const square = await buildBendTest({ kind, params: { ...COB, EDGE_PROFILE: 'square' } });
       const vSquare = square.manifold.volume();
       const genus = square.pieces[0]!.genus;
       square.manifold.delete();
 
       for (const profile of PROFILES) {
-        const r = await buildBendTest({ kind, params: { EDGE_PROFILE: profile } });
+        const r = await buildBendTest({ kind, params: { ...COB, EDGE_PROFILE: profile } });
         try {
           expect(r.status).toBe('NoError');
           expect(r.pieces[0]!.genus).toBe(genus);
@@ -129,7 +131,7 @@ describe('profilo dei bordi sui pezzi di prova', () => {
   }
 
   it('2 varianti con smusso "both": entrambe manifold con lo stesso genus', async () => {
-    const r = await buildBendTest({ kind: 'corners', variants: true, params: { EDGE_PROFILE: 'both' } });
+    const r = await buildBendTest({ kind: 'corners', variants: true, params: { ...COB, EDGE_PROFILE: 'both' } });
     try {
       expect(r.status).toBe('NoError');
       for (const p of r.pieces) expect(p.genus).toBe(r.expectedHoles);

@@ -34,7 +34,8 @@ describe('parametri tecnici della pagina cliente', () => {
 
   it('ogni parametro tecnico sopravvive al link condiviso', () => {
     const numbers = Object.fromEntries(
-      TECH_FIELDS.map((f) => [f.key, String(Math.min(f.max, DEFAULT_PARAMS[f.key] + f.step))]),
+      // Un passo sopra il default, o sotto se il default è già il massimo.
+      TECH_FIELDS.map((f) => [f.key, String(DEFAULT_PARAMS[f.key] + f.step <= f.max ? DEFAULT_PARAMS[f.key] + f.step : DEFAULT_PARAMS[f.key] - f.step)]),
     );
     const params = { WALL: 2.2, ...techParams({ numbers, edgeProfile: 'both' }) };
     expect(Object.keys(params).length).toBe(TECH_FIELDS.length + 2);
@@ -60,9 +61,10 @@ describe('parametri tecnici della pagina cliente', () => {
     expect(options.filter((o) => o.isDefault).map((o) => o.value)).toEqual([DEFAULT_LED_DENSITY]);
     expect(DEFAULT_LED_DENSITY).toBe(144);
     expect(techParams({ numbers: {}, edgeProfile: 'square', ledPerM: '60' })).toEqual({ LED_PER_M: 60 });
-    // Il profilo della striscia non è nella scala: la densità va sempre nell'ordine.
-    expect(techParams({ numbers: {}, edgeProfile: 'square', ledPerM: '144' })).toEqual({ LED_PER_M: 144 });
-    expect(techParams({ numbers: {}, edgeProfile: 'square', ledPerM: '160' })).toEqual({ LED_PER_M: 144 });
+    // 144 è anche la densità del profilo standard: uguale al default, non va nell'ordine.
+    expect(techParams({ numbers: {}, edgeProfile: 'square', ledPerM: '144' })).toEqual({});
+    // Un valore fuori scala torna a 144.
+    expect(techParams({ numbers: {}, edgeProfile: 'square', ledPerM: '160' })).toEqual({});
     expect(techParams({ numbers: {}, edgeProfile: 'square' })).toEqual({});
   });
 

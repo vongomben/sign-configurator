@@ -19,17 +19,19 @@ Unità: **millimetri** ovunque. Piano XY = piano dell'insegna, Z verso chi guard
 
 ## 2. Hardware (vincoli fisici)
 
-Striscia: TOPAI WS2812B COB 5 mm, RGBIC indirizzabile, 160 IC/m, connettori 3 pin.
+Striscia standard: **larga 10 mm, spessa 6 mm** (profilo `strip-10mm`), indirizzabile. Resta in elenco
+la TOPAI WS2812B COB 5 mm (RGBIC, 160 IC/m, connettori 3 pin), per cui sono disegnati i pezzi del
+bend test.
 
 | Parametro | Valore | Note |
 |---|---|---|
-| `STRIP_W` | 5.0 | larghezza striscia |
-| `STRIP_T` | 2.0 | **DA MISURARE** |
+| `STRIP_W` | 10.0 | larghezza striscia (COB: 5.0) |
+| `STRIP_T` | 6.0 | spessore striscia (COB: 2.0) |
 | `BANK_TRANSITION_L` | 25 | pezzo D del campione di piegatura: transizione lineare dell'inclinazione prima e dopo l'arco. Non usata da [H]/[I] |
-| `HINGE_PITCH` | 10.0 | intagli sui bordi ogni ~1 cm: la striscia piegata di lato si comporta come una catena di tratti rigidi |
+| `HINGE_PITCH` | 10.0 | intagli sui bordi ogni ~1 cm: la striscia piegata di lato si comporta come una catena di tratti rigidi. Per la striscia da 10 mm **DA MISURARE** (oggi il valore della COB) |
 | `HINGE_MAX_DEG` | 40 | sul pezzo B la striscia segue fino a 45° con leggera tensione; 40° è il margine del generatore |
 | `CUT_PITCH` | 10.0 | passo di taglio (verificare se coincide con gli intagli) |
-| `LED_PER_M` | 160 | |
+| `LED_PER_M` | 144 | striscia da 10 mm (COB: 160); il cliente sceglie fra 30, 60, 74, 96, 144 |
 | `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno a 5 V, per la stima dell'alimentatore |
 | `STRIP_V` | 5 | tensione della striscia: 5, 12 o 24 V (`STRIP_VOLTAGES`). A parità di potenza per LED la corrente scala come 5 / `STRIP_V` |
 
@@ -47,7 +49,8 @@ Altezza minima di lettera derivata: `MIN_LETTER_H = 2·R_MIN`, il diametro della
 ### Profilo striscia (`src/config.ts`)
 
 `STRIP_W`, `STRIP_T`, `CHANNEL_W`, `HINGE_PITCH`, `HINGE_MAX_DEG`, `CUT_PITCH` e `LED_PER_M`
-stanno nel profilo `cob-5mm` (TOPAI WS2812B COB 5 mm), l'unica voce di `STRIP_PROFILES`.
+stanno nel profilo della striscia: `strip-10mm` (standard, `DEFAULT_STRIP`) e `cob-5mm` (TOPAI WS2812B
+COB 5 mm), le due voci di `STRIP_PROFILES`.
 Le altre strisce si aggiungono lì, senza un secondo elenco di numeri. `DEFAULT_PARAMS` copia
 questi campi dal profilo di default. `R_MIN` e `MIN_LETTER_H` non si impostano: `resolveParams`
 ricalcola `MIN_LETTER_H` da cerniera e passo.
@@ -56,8 +59,8 @@ ricalcola `MIN_LETTER_H` da cerniera e passo.
 
 | Parametro | Default | Significato |
 |---|---|---|
-| `CHANNEL_W` | 5.4 | larghezza canale su tratto dritto (STRIP_W + tolleranza) |
-| `CHANNEL_DEPTH` | 8.0 | profondità canale |
+| `CHANNEL_W` | 10.4 | larghezza canale su tratto dritto (STRIP_W + 0,4 di tolleranza; COB: 5.4) |
+| `CHANNEL_DEPTH` | 12.0 | profondità canale: la striscia (6) più 6 mm fra i LED e il diffusore, come con la COB (8 = 2 + 6) |
 | `WALL` | 2.2 | spessore parete (la "cornice") |
 | `WALL_MIN` | 1.2 | spessore minimo della parete interna: la freccia non la assottiglia oltre |
 | `MIN_GAP` | 1.0 | aria minima fra due sagome che non devono fondersi |
@@ -68,7 +71,7 @@ ricalcola `MIN_LETTER_H` da cerniera e passo.
 | `ANCHOR_MIN_PER_SEGMENT` | 2 | |
 | `ANCHOR_BOSS` | false | se true: distanziali cilindrici sul retro |
 | `ANCHOR_BOSS_D` / `_H` | 8 / 6 | |
-| `WIRE_SLOT_W` | 5.4 | larghezza asola fili, di default = `CHANNEL_W`: tutta l'estremità del canale |
+| `WIRE_SLOT_W` | 10.4 | larghezza asola fili, di default = `CHANNEL_W`: tutta l'estremità del canale |
 | `WIRE_SLOT_L` | 6.0 | ultimi mm dello spezzone occupati dall'asola, a filo della terminazione arrotondata |
 | `SLOT_LIP_CHAMFER` | 1.0 | smusso a 45° sul labbro interno dell'asola, lato spezzone |
 | `CORNER_MERGE_DIST` | 4.0 | sotto questa distanza due asole DIN/DOUT diventano una tasca d'angolo |
