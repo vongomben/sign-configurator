@@ -24,16 +24,16 @@ import type { HousingModel } from './housing';
 export type { PlateChoice, PlateMaterial, PlateShape };
 
 export const PLATE_SHAPES: readonly { value: PlateShape; label: string }[] = [
-  { value: 'rect', label: 'Rettangolare' },
-  { value: 'pill', label: 'Pillola' },
-  { value: 'contour', label: 'Sagomato attorno ai LED' },
+  { value: 'rect', label: 'Rectangle' },
+  { value: 'pill', label: 'Pill' },
+  { value: 'contour', label: 'Contour' },
 ];
 
-/** Etichette per il cliente; lo spessore viene da `PLATE_T` (segnaposto finché non si misura). */
+/** Etichette per il cliente (in inglese, SPEC §12.2); lo spessore viene da `PLATE_T` (segnaposto). */
 export const PLATE_MATERIALS: Readonly<Record<PlateMaterial, { label: string; thicknessMm: number }>> = {
-  clear: { label: 'Plexi trasparente', thicknessMm: PLATE_T.clear },
-  black: { label: 'Plexi nero trasparente', thicknessMm: PLATE_T.black },
-  wood: { label: 'Legno', thicknessMm: PLATE_T.wood },
+  clear: { label: 'Clear acrylic', thicknessMm: PLATE_T.clear },
+  black: { label: 'Smoked black acrylic', thicknessMm: PLATE_T.black },
+  wood: { label: 'Wood', thicknessMm: PLATE_T.wood },
 };
 
 export const DEFAULT_PLATE: Readonly<PlateChoice> = Object.freeze({

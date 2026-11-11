@@ -84,7 +84,7 @@ describe('fondale', () => {
       expect(PLATE_MATERIALS[material].thicknessMm).toBe(PLATE_T[material]);
       plate.solid.delete();
     }
-    expect(PLATE_MATERIALS.black.label).toBe('Plexi nero trasparente');
+    expect(PLATE_MATERIALS.black.label).toBe('Smoked black acrylic');
   });
 
   it('pillola: raggio pari a metà del lato corto, area minore del rettangolo, montaggio sulle teste', async () => {

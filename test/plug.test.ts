@@ -28,7 +28,7 @@ describe('spina dell\'alimentatore', () => {
       expect(plug.icon).toContain('<svg');
     }
     expect(DEFAULT_CUSTOMER.plug).toBe('EU');
-    expect(plugOf('UK').label).toContain('Regno Unito');
+    expect(plugOf('UK').label).toContain('UK & Ireland');
     expect(plugOf('XX').value).toBe('EU');
   });
 
