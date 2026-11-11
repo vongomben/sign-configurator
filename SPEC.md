@@ -879,7 +879,14 @@ copre. All'apertura nessun foglio è aperto.
   SVG del modello (`src/parts/supplyArt.ts`), in obliquo e alla stessa scala per tutti (0,6 px/mm,
   dalle misure del catalogo): scatola con feritoie e morsettiera (LRS), mattone nero con presa C14 e
   cavo (GST60A), corpo stagno con due cavi (LPV). Disegni e non foto: Mean Well pubblica foto solo per
-  serie e quelle dei rivenditori non sono nostre. La riga dell'ancora è evidenziata.
+  serie e quelle dei rivenditori non sono nostre. Anche i controller hanno il loro disegno
+  (`src/parts/controllerArt.ts`, 1,2 px/mm, stessa scala fra loro): scheda nuda con morsettiere verdi
+  (Dig-Uno, Dig-Quad) o scheda in custodia (GLEDOPTO bianchi, Dig-Next-2 nero). Senza misure del
+  costruttore la sagoma è tratteggiata, di misura indicativa (60 × 35 × 20 mm), con «size not published».
+  Ogni sezione (alimentatori, controller, strisce) ha un pulsante **+ Add one** che apre il modulo issue
+  GitHub `.github/ISSUE_TEMPLATE/new-part.yml` («New part», etichette `new-part` e `needs-review`), con
+  il titolo «[Part] <categoria>: ». Le proposte entrano nel catalogo solo dopo la revisione del
+  maintainer, a mano in `src/parts/supplies.ts` o `CONTROLLERS`. La riga dell'ancora è evidenziata.
   Sul telefono ogni riga diventa una scheda.
 - **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
   schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno

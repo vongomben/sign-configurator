@@ -22,6 +22,28 @@ body { margin: 0; background: var(--paper); }
   line-height: 1.45;
 }
 
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 40px 0 6px;
+}
+.section-head h2 { margin: 0; }
+.add-one {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--neon);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.add-one:hover,
+.add-one:focus-visible { filter: brightness(1.1); text-decoration: underline; text-underline-offset: 3px; }
+
 h1 { margin: 8px 0 4px; font-size: 1.9rem; }
 h2 { margin: 40px 0 6px; font-size: 1.35rem; }
 h3 { margin: 24px 0 2px; font-size: 1.05rem; }
@@ -57,7 +79,8 @@ tbody tr:last-child > * { border-bottom: 0; }
 tbody th small { display: block; font-weight: 400; color: var(--muted); max-width: 26ch; }
 td.none { color: var(--muted); }
 td.art { padding: 4px 6px; width: 1%; vertical-align: middle; }
-.supply-art {
+.supply-art,
+.part-art {
   display: block;
   width: 175px;
   height: auto;

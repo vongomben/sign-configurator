@@ -3,8 +3,17 @@
 
 import './parts.css';
 import { CONTROLLER, CONTROLLERS, STRIP_PROFILES, STRIP_VOLTAGES } from '../config';
+import { controllerArt } from '../parts/controllerArt';
 import { supplyArt } from '../parts/supplyArt';
 import { SUPPLIES, type SupplyFamily, type SupplyKind } from '../parts/supplies';
+
+/** Modulo issue «New part» (`.github/ISSUE_TEMPLATE/new-part.yml`): chi propone, chi approva è il maintainer. */
+const NEW_PART_URL = 'https://github.com/vongomben/sign-configurator/issues/new?template=new-part.yml';
+
+function addOne(category: string): string {
+  const title = encodeURIComponent(`[Part] ${category}: `);
+  return `<a class="add-one" href="${NEW_PART_URL}&title=${title}" target="_blank" rel="noopener">+ Add one</a>`;
+}
 
 const KINDS: { kind: SupplyKind; title: string; text: string }[] = [
   {
@@ -65,7 +74,7 @@ const strips = STRIP_PROFILES.map(
 
 const controllers = CONTROLLERS.map((c) => {
   const size = c.sizeMm ? `${num(c.sizeMm[0])} × ${num(c.sizeMm[1])} × ${num(c.sizeMm[2])} mm` : '—';
-  return `<tr id="${c.id}"><th scope="row"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a>
+  return `<tr id="${c.id}"><td class="art">${controllerArt(c)}</td><th scope="row"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a>
     <small>${esc(c.model)}${c.id === CONTROLLER.id ? ' · standard' : ''}${c.note ? `. ${esc(c.note)}` : ''}</small></th>
     <td>${c.minV}–${c.maxV} V</td><td>${c.maxA} A</td><td>${c.maxIcs}</td><td>${c.outputs}</td><td>${size}</td></tr>`;
 }).join('');
@@ -74,12 +83,14 @@ document.querySelector('#parts')!.innerHTML = `
   <header>
     <a class="back" href="./">← Configurator</a>
     <h1>Parts</h1>
-    <p>What goes behind the sign. The configurator sizes the power supply from the number of LEDs,
+    <p>What goes behind the sign. Know a part that should be here? Use <strong>+ Add one</strong>:
+      it opens a short form on GitHub, and new parts are listed after review.</p>
+    <p> The configurator sizes the power supply from the number of LEDs,
       the strip voltage and a 25 % margin, then picks the smallest part below that fits.</p>
   </header>
 
   <section id="power-supplies">
-    <h2>Power supplies</h2>
+    <div class="section-head"><h2>Power supplies</h2>${addOne('Power supply')}</div>
     <p class="lead">Mean Well, universal input 100–240 V AC. Each model comes in 5, 12 and 24 V;
       the cells give the output current and the order code.</p>
     ${KINDS.map(
@@ -91,21 +102,22 @@ document.querySelector('#parts')!.innerHTML = `
   </section>
 
   <section id="controllers">
-    <h2>Controllers</h2>
+    <div class="section-head"><h2>Controllers</h2>${addOne('Controller')}</div>
     <p class="lead">ESP32 boards running WLED. Input voltage = strip voltage. The ${esc(CONTROLLER.name)} is
       standard; the others are options in Tech, for longer signs or more power.</p>
     <div class="scroll"><table>
-      <thead><tr><th scope="col">Model</th><th scope="col">Input</th><th scope="col">Max current</th>
+      <thead><tr><th scope="col"><span class="sr-only">Drawing</span></th><th scope="col">Model</th><th scope="col">Input</th><th scope="col">Max current</th>
         <th scope="col">Max LEDs</th><th scope="col">Outputs</th><th scope="col">Size (L × W × H)</th></tr></thead>
       <tbody>${controllers}</tbody>
     </table></div>
     <p class="fine">Above the max current the power supply still fits, but the strip needs power injection
       or a bigger controller. Max LEDs: the maker's figure, or about 600 per output, which WLED suggests for a
-      smooth frame rate. Check the maker's page (click a model) before ordering.</p>
+      smooth frame rate. Check the maker's page (click a model) before ordering.
+      Drawings are not photos; a dashed outline means the maker does not publish the size.</p>
   </section>
 
   <section id="strips">
-    <h2>LED strips</h2>
+    <div class="section-head"><h2>LED strips</h2>${addOne('LED strip')}</div>
     <div class="scroll"><table>
       <thead><tr><th scope="col">Strip (W × T)</th><th scope="col">Channel</th><th scope="col">Density</th>
         <th scope="col">Hinge pitch</th><th scope="col">Cut pitch</th></tr></thead>

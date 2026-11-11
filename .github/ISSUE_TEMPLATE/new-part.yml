@@ -1,0 +1,98 @@
+name: New part
+description: Suggest a power supply, controller or LED strip for the Parts page.
+title: "[Part] "
+labels: ["new-part", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Every suggestion is reviewed before it goes on the Parts page.
+        Take the numbers from the maker's datasheet, not from a shop listing.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Power supply
+        - Controller
+        - LED strip
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: brand
+    attributes:
+      label: Brand
+      placeholder: Mean Well
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model or series
+      placeholder: LRS-100
+    validations:
+      required: true
+
+  - type: textarea
+    id: variants
+    attributes:
+      label: Versions and order codes
+      description: One line per version. Power supplies — voltage and output current. Controllers — input voltage range. LED strips — voltage and LEDs per metre.
+      placeholder: |
+        LRS-100-5 · 5 V · 18 A
+        LRS-100-12 · 12 V · 8.5 A
+        LRS-100-24 · 24 V · 4.5 A
+    validations:
+      required: true
+
+  - type: input
+    id: limits
+    attributes:
+      label: Limits
+      description: Power supplies — power in W. Controllers — max current, max LEDs, number of outputs. LED strips — width × thickness, cut pitch.
+      placeholder: 15 A total · 1200 LEDs · 2 outputs
+
+  - type: input
+    id: size
+    attributes:
+      label: Size (L × W × H, mm)
+      placeholder: 129 × 97 × 30
+
+  - type: input
+    id: price
+    attributes:
+      label: Typical price (€, one piece, excluding VAT)
+      placeholder: 14–22
+
+  - type: input
+    id: datasheet
+    attributes:
+      label: Datasheet or maker's page
+      placeholder: https://
+    validations:
+      required: true
+
+  - type: textarea
+    id: photo
+    attributes:
+      label: Photo (optional)
+      description: Drag an image here. Only a photo you took, or one the maker lets you share.
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is a good fit
+      description: Where you used it, anything to watch out for.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Before you send
+      options:
+        - label: The numbers come from the maker's datasheet.
+          required: true
+        - label: I took the photo myself, or the maker allows sharing it, and it can be shown on the Parts page.

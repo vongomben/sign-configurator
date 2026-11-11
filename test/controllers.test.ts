@@ -55,3 +55,15 @@ describe('controller', () => {
     expect(bad.warnings.join(' ')).toContain('Controller');
   });
 });
+
+describe('disegni dei controller', () => {
+  it('uno per controller; senza misure del costruttore la sagoma è tratteggiata e lo dice', async () => {
+    const { controllerArt } = await import('../src/parts/controllerArt');
+    for (const c of CONTROLLERS) {
+      const svg = controllerArt(c);
+      expect(svg).toContain(`${c.name}, `);
+      expect(svg.includes('size not published')).toBe(c.sizeMm === null);
+      expect(svg.includes('stroke-dasharray')).toBe(c.sizeMm === null);
+    }
+  });
+});
