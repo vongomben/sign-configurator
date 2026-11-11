@@ -30,7 +30,8 @@ describe('altezza minima', () => {
     expect(model.suggestion.hasErrors).toBe(false);
     expect(model.suggestion.heightMm).toBe(DEFAULT_PARAMS.CUT_PITCH);
     expect(model.bom.segments[0]?.cutLengthMm).toBe(80);
-    expect(model.bom.totalLeds).toBe(14);
+    // 100 mm meno le due asole da 6: 88 mm di luce.
+    expect(model.bom.totalLeds).toBe(Math.round((88 * DEFAULT_PARAMS.LED_PER_M) / 1000));
   });
 
   it("alza l'altezza finché un arco stretto raggiunge R_MIN", () => {

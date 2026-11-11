@@ -8,7 +8,8 @@ describe('config', () => {
   });
 
   it('altezza totale = FLOOR + CHANNEL_DEPTH', () => {
-    expect(totalHeight(DEFAULT_PARAMS)).toBe(12);
+    expect(totalHeight(DEFAULT_PARAMS)).toBe(DEFAULT_PARAMS.FLOOR + DEFAULT_PARAMS.CHANNEL_DEPTH);
+    expect(totalHeight(DEFAULT_PARAMS)).toBe(16);
   });
 
   it("l'asola è larga quanto il canale e sta negli ultimi millimetri", () => {
@@ -19,8 +20,13 @@ describe('config', () => {
     expect(DEFAULT_PARAMS.SLOT_LIP_CHAMFER).toBe(1);
   });
 
-  it('il profilo striscia è la COB da 5 mm e MIN_LETTER_H è il doppio di R_MIN', () => {
-    expect(DEFAULT_STRIP.id).toBe('cob-5mm');
+  it('la striscia standard è larga 10 e spessa 6, e MIN_LETTER_H è il doppio di R_MIN', () => {
+    expect(DEFAULT_STRIP.id).toBe('strip-10mm');
+    expect(DEFAULT_PARAMS.STRIP_W).toBe(10);
+    expect(DEFAULT_PARAMS.STRIP_T).toBe(6);
+    expect(DEFAULT_PARAMS.CHANNEL_W).toBe(10.4);
+    // Fra i LED e il diffusore restano 6 mm, come con la COB.
+    expect(DEFAULT_PARAMS.CHANNEL_DEPTH - DEFAULT_PARAMS.STRIP_T).toBe(6);
     expect(DEFAULT_PARAMS.STRIP_W).toBe(DEFAULT_STRIP.STRIP_W);
     expect(DEFAULT_PARAMS.STRIP_T).toBe(DEFAULT_STRIP.STRIP_T);
     expect(DEFAULT_PARAMS.CHANNEL_W).toBe(DEFAULT_STRIP.CHANNEL_W);

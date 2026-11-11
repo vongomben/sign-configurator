@@ -62,7 +62,7 @@
             <label>CHAMFER_ANGLE <input name="CHAMFER_ANGLE" type="number" step="1" min="1" max="89" /></label>
             <label>LAYER_STEP <input name="LAYER_STEP" type="number" step="0.02" min="0.04" /></label>
           </fieldset>
-          <label class="check"><input name="variants" type="checkbox" /> 2 varianti di tolleranza: CHANNEL_W 5.4 / 5.8</label>
+          <label class="check"><input name="variants" type="checkbox" /> 2 varianti di tolleranza: CHANNEL_W e CHANNEL_W + 0,4</label>
           <button type="submit">Genera</button>
           <button type="button" id="download-arcs" disabled>Scarica STL A</button>
           <button type="button" id="download-corners" disabled>Scarica STL B</button>
@@ -86,7 +86,7 @@
           <dt>Bordi</dt>
           <dd>Smusso a gradini alti LAYER_STEP, alto CHAMFER_SIZE (verticale) a CHAMFER_ANGLE dall'orizzontale. Con smusso interno in cima restano almeno 0.8 mm di parete.</dd>
           <dt>Tacche sul bordo esterno</dt>
-          <dd>Sul primo tratto dritto: 1 = W 5.4, 2 = W 5.8 (solo con le varianti).</dd>
+          <dd>Sul primo tratto dritto: 1 = CHANNEL_W, 2 = CHANNEL_W + 0,4 (solo con le varianti).</dd>
         </dl>
       </aside>
       <div id="viewer"></div>
