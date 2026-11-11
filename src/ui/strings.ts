@@ -60,12 +60,25 @@ export const S = {
     density: 'LED density',
     voltage: 'Strip voltage',
     profile: 'Edge profile',
+    controller: 'Controller',
+    box: 'Box',
+    tooSmall: 'too small',
   },
   more: { editPaths: 'Edit paths', restorePaths: 'Restore original' },
   plug: {
     label: 'Plug',
     aria: 'Power supply plug',
     title: (country: string) => `Power supply plug: ${country}. Universal input 100–240 V.`,
+  },
+  supply: {
+    /** Pillola: modello, tensione e corrente nominale. */
+    pill: (model: string, volts: number, amps: number) => `${model} · ${volts} V · ${amps} A`,
+    /** Nessun modello del catalogo basta: solo quanto serve. */
+    bare: (volts: number, amps: number) => `${volts} V · ${amps} A`,
+    title: (model: string, needA: number, volts: number) =>
+      `Power supply: ${model}. The sign needs ${needA} A at ${volts} V (25 % margin). See all parts.`,
+    none: (needA: number, volts: number) => `No listed power supply gives ${needA} A at ${volts} V. See all parts.`,
+    value: (model: string, volts: number, amps: number, needA: number) => `${model} · ${volts} V ${amps} A (needs ${needA} A)`,
   },
   order: { send: 'Send order', download: 'Download STL', blockedFallback: 'Fix the design before sending.' },
   status: {
@@ -98,6 +111,9 @@ export const S = {
     plug: 'Plug',
     plugValue: (country: string) => `${country} · 100–240 V`,
     supply: 'Power supply',
+    box: 'Box',
+    boxValue: (name: string, inner: string, auto: boolean) => `${name} · ${inner} mm inside${auto ? ' (auto)' : ''}`,
+    noBox: 'No box',
     warning: 'Warning',
     profile: 'Edge profile',
     voltage: 'Strip voltage',
@@ -114,8 +130,10 @@ export function customerMessage(warning: string): string | null {
     [/tratto non uniforme/, () => 'Uneven stroke: try the Outline trace.'],
     [/^Puntino troppo piccolo|^Puntino non/, () => 'The dot is too small to light at this size.'],
     [/^Trattino fuori/, () => 'The dash does not fit inside the dot.'],
+    [/^Scatola (\S+) troppo piccola/, (m) => `The ${m[1]} box is too small for the power supply and controller.`],
+    [/^Nessuna scatola del catalogo/, () => 'No listed box fits the power supply and controller.'],
     [/oltre i (\d+) A del controller/, (m) => `Over the controller's ${m[1]} A: needs power injection or a second controller.`],
-    [/oltre gli (\d+) IC del controller/, (m) => `Over the controller's ${m[1]} LEDs: needs a second controller.`],
+    [/oltre (?:gli|il limite di) (\d+) IC del controller/, (m) => `Over the controller's ${m[1]} LEDs: needs a second controller.`],
   ];
   for (const [pattern, phrase] of rules) {
     const match = warning.match(pattern);

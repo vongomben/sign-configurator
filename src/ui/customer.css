@@ -256,6 +256,15 @@ select {
 #preview-supply {
   margin-left: auto;
   white-space: nowrap;
+  color: #f6f1ea;
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+#preview-supply:hover,
+#preview-supply:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* Spina e alimentatore, affiancati in basso a destra. */

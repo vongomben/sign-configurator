@@ -34,6 +34,8 @@ bend test.
 | `LED_PER_M` | 144 | striscia da 10 mm (COB: 160); il cliente sceglie fra 30, 60, 74, 96, 144 |
 | `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno a 5 V, per la stima dell'alimentatore |
 | `STRIP_V` | 5 | tensione della striscia: 5, 12 o 24 V (`STRIP_VOLTAGES`). A parità di potenza per LED la corrente scala come 5 / `STRIP_V` |
+| `BOX_ID` | `auto` | scatola dell'elettronica: `auto`, `none` o un id di `BOXES` (vedi Scatola) |
+| `CONTROLLER_ID` | `gl-c-309wl` | controller WLED, id di `CONTROLLERS` (vedi Controller): cambia i limiti di corrente e LED della distinta |
 
 Montaggio: striscia **piatta sul fondo del canale, LED verso chi guarda**, piegata di lato sfruttando le cerniere.
 
@@ -45,6 +47,32 @@ non si verifica sul manuale. Gli IC si contano come i LED (una striscia a 12 o 2
 
 Raggio minimo derivato dal profilo: `R_MIN = HINGE_PITCH / (2·sin(HINGE_MAX_DEG/2))` (≈ 14,6 mm con 40°).
 Altezza minima di lettera derivata: `MIN_LETTER_H = 2·R_MIN`, il diametro della piega più stretta.
+
+### Controller (`CONTROLLERS` in `src/config.ts`)
+
+Controller WLED su ESP32; la tensione d'ingresso è quella della striscia. Standard il GLEDOPTO
+ESP32 Ultra Mini (GL-C-309WL: 5–24 V, 10 A, 800 LED, 2 uscite). Opzionali, nel menu Tech
+`CONTROLLER_ID`: GLEDOPTO GL-C-618WL (5–24 V, 15 A totali, 10 A per uscita, 4 uscite, Ethernet),
+QuinLED Dig-Uno v3.1 (5–24 V, 15 A, 2 uscite, 50 × 40 × 25 mm), QuinLED Dig-Next-2 (5–48 V, uscite di
+potenza 2 × 5 A + 10 A, 2 uscite dati, ~1200 LED), QuinLED Dig-Quad v4 (5–24 V, 30 A continui, 4 uscite,
+100 × 50 × 25 mm). Dove il costruttore non dà un limite di LED: ~600 per uscita, la soglia che WLED
+suggerisce per un buon frame rate. Il controller cambia solo gli avvisi della distinta (corrente e LED),
+non la geometria; va nell'ordine (`params.CONTROLLER_ID`) solo se diverso dallo standard, e un id
+sconosciuto nel link torna allo standard con un avviso.
+
+### Scatola (`src/parts/boxes.ts`)
+
+La scatola contiene il controller e, se è da quadro (LRS), l'alimentatore; l'adattatore con spina
+(GST60A) resta fuori e dentro entra solo il suo cavo DC. Catalogo `BOXES`: Hammond 1591XXLSBK,
+1591XXGSBK, 1591XXTSBK (ABS nero, IP54; misure esterne, interno stimato con pareti da 2,5 mm e 7 mm
+fra fondo e coperchio) e Gewiss serie 44 CE GW44204–GW44209 (tecnopolimero grigio, IP56, IP55 la
+GW44209; misure interne dal codice), con prezzo medio. Ingombri (`boxNeeds`): i componenti affiancati
+in fila lungo L o lungo W, 5 mm dalle pareti (`BOX_WALL_GAP_MM`), 10 mm fra loro (`BOX_ITEM_GAP_MM`),
+10 mm d'aria sopra per i cavi (`BOX_TOP_GAP_MM`); la scatola può essere girata. Un controller senza
+misure pubblicate conta 60 × 35 × 20 mm (`CONTROLLER_FALLBACK_MM`). Menu Tech `BOX_ID`: `auto` (default,
+la più piccola per volume interno che basta), `none` o l'id di una scatola; dopo ogni generazione
+le scatole che non bastano sono segnate «too small». Una scatola scelta troppo piccola, o nessuna che
+basti in automatico, dà un avviso nel riepilogo. Va nell'ordine solo se diversa da `auto`.
 
 ### Profilo striscia (`src/config.ts`)
 
@@ -543,6 +571,16 @@ fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
 - `voltageV`: tensione della striscia e dell'alimentatore (`STRIP_V`)
 - `maxCurrentA`: `totalLeds · LED_MAX_MA / 1000 · 5 / STRIP_V`, bianco pieno
 - `supplyA`: alimentatore consigliato, il minimo intero di ampere che copre la corrente massima con il 25% di margine
+- `supply`: modello consigliato dal catalogo, `{ model, family, watts, amps }` (`amps` nominali del
+  modello), o `null` se nessuno regge `supplyA`. Il catalogo (`src/parts/supplies.ts`) ha dieci famiglie
+  Mean Well, 100–240 V in ingresso, ciascuna a 5, 12 e 24 V dove esiste: l'adattatore con spina GST60A,
+  gli LRS-35/50/75/100/150/200/350 da quadro e gli LPV-60/100 stagni IP67, con correnti, misure (mm),
+  prezzo medio (€ per pezzo, IVA esclusa, novembre 2026) e scheda tecnica. `pickSupply(V, A)` sceglie il
+  GST60A se basta, altrimenti l'LRS più piccolo che regge la corrente alla tensione della striscia; gli
+  LPV (esterno) non vengono scelti
+- `box`: scatola `{ id, model, brand, innerMm, fits, auto, contents }` o `null` (nessun LED, `none`,
+  o nessuna basta); `boxWarnings`; `boxesThatFit`: id delle scatole che bastano, dalla più piccola
+- `controller`: id del controller scelto (`CONTROLLER_ID`, default `gl-c-309wl`)
 - `controllerWarnings`: avvisi se `supplyA` supera i 10 A del controller (serve iniettare corrente o un
   secondo controller) o se i LED superano i suoi 800 IC. Non bloccano l'invio; entrano negli avvisi
   del generatore. Nella pagina cliente la pillola dell'alimentatore («12 V · 4 A») diventa rossa e
@@ -698,10 +736,10 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
   va eseguito, e gli errori vanno corretti finché passa, prima di considerare il lavoro finito.
   Una tantum, dopo l'installazione delle dipendenze: `npx playwright install chromium`.
 - Deploy:
-  - **Il build pubblico contiene solo `index.html`** (pagina cliente): `npm run build:public`
+  - **Il build pubblico contiene solo `index.html` e `parts.html`** (pagina cliente e pagina Parts): `npm run build:public`
     (`vite build --mode public`).
   - Il sito pubblico è https://vongomben.github.io/sign-configurator/ . È il build di
-    `npm run build:public` (solo la pagina cliente). Il `base` in `vite.config.ts` resta
+    `npm run build:public` (pagina cliente e Parts). Il `base` in `vite.config.ts` resta
     `/sign-configurator/`.
   - `.github/workflows/deploy.yml`, a ogni push su `main`, esegue quel build e lo pubblica con
     `actions/upload-pages-artifact` e `actions/deploy-pages`. Perché parta, in Settings → Pages la
@@ -847,9 +885,27 @@ copre. All'apertura nessun foglio è aperto.
   tipo J), US (Stati Uniti e Canada, tipo A/B), in `src/ui/plugs.ts`. Il disegno e il title seguono la
   scelta; va in `customer.plug` e nel riepilogo di Richiedi («Spina: … · alimentatore 100–240 V»).
   Gli alimentatori sono universali, 100–240 V in ingresso: cambia solo la forma della spina, non la
-  tensione di rete. Accanto, se la distinta conosce l'alimentatore, pillola scura `#preview-supply`
-  con tensione e ampere consigliati (`5 V · 8 A`), rossa oltre i limiti del controller: bilancia il
-  conteggio dei LED. Senza LED resta nascosta.
+  tensione di rete. Accanto, se la distinta conosce l'alimentatore, pillola scura `a#preview-supply`
+  con il modello consigliato, la sua tensione e la sua corrente nominale (`LRS-50-5 · 5 V · 10 A`; senza
+  modello solo `5 V · 8 A`), rossa oltre i limiti del controller: bilancia il conteggio dei LED. È un
+  link alla pagina **Parts** (`parts.html#<famiglia>`, nuova scheda); il title dice quanti ampere servono.
+  Richiedi mostra «LRS-50-5 · 5 V 10 A (needs 8 A)». Senza LED resta nascosta.
+- **Pagina Parts** (`parts.html`, `src/ui/parts.ts`), pubblica e in inglese: le tabelle del catalogo
+  alimentatori divise per tipo (Plug-in adapter, Enclosed, Waterproof), con corrente e codice d'ordine a
+  5/12/24 V, misure e prezzo; poi i controller (`CONTROLLERS`) e i profili striscia. La prima colonna è un disegno
+  SVG del modello (`src/parts/supplyArt.ts`), in obliquo e alla stessa scala per tutti (0,6 px/mm,
+  dalle misure del catalogo): scatola con feritoie e morsettiera (LRS), mattone nero con presa C14 e
+  cavo (GST60A), corpo stagno con due cavi (LPV). Disegni e non foto: Mean Well pubblica foto solo per
+  serie e quelle dei rivenditori non sono nostre. Anche i controller hanno il loro disegno
+  (`src/parts/controllerArt.ts`, 1,2 px/mm, stessa scala fra loro): scheda nuda con morsettiere verdi
+  (Dig-Uno, Dig-Quad) o scheda in custodia (GLEDOPTO bianchi, Dig-Next-2 nero). Senza misure del
+  costruttore la sagoma è tratteggiata, di misura indicativa (60 × 35 × 20 mm), con «size not published».
+  La sezione Boxes elenca le scatole con disegno in scala (`src/parts/boxArt.ts`, 0,4 px/mm), misure
+  interne ed esterne e prezzo. Ogni sezione (alimentatori, controller, scatole, strisce) ha un pulsante **+ Add one** che apre il modulo issue
+  GitHub `.github/ISSUE_TEMPLATE/new-part.yml` («New part», etichette `new-part` e `needs-review`), con
+  il titolo «[Part] <categoria>: ». Le proposte entrano nel catalogo solo dopo la revisione del
+  maintainer, a mano in `src/parts/supplies.ts` o `CONTROLLERS`. La riga dell'ancora è evidenziata.
+  Sul telefono ogni riga diventa una scheda.
 - **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
   schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno
   sotto l'altro, centrati. Ciascuno con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`
