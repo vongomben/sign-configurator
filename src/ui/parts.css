@@ -56,6 +56,24 @@ thead th { color: var(--muted); font-weight: 600; font-size: 0.8rem; white-space
 tbody tr:last-child > * { border-bottom: 0; }
 tbody th small { display: block; font-weight: 400; color: var(--muted); max-width: 26ch; }
 td.none { color: var(--muted); }
+td.art { padding: 4px 6px; width: 1%; vertical-align: middle; }
+.supply-art {
+  display: block;
+  width: 175px;
+  height: auto;
+  border-radius: 8px;
+  background: linear-gradient(#f4f1ec, #e2ddd6);
+}
+td[data-label="Price"] { white-space: nowrap; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .amps { display: block; font-weight: 600; }
 .code { display: block; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
 
@@ -84,6 +102,9 @@ dd { margin: 0; }
     border-radius: 10px;
   }
   #power-supplies tbody th { grid-column: 1 / -1; }
+  #power-supplies td.art { grid-column: 1 / -1; width: auto; padding-top: 10px; }
+  #power-supplies td.art::before { display: none; }
+  #power-supplies .supply-art { width: 100%; max-width: 260px; }
   #power-supplies td { border-bottom: 0; }
   #power-supplies td::before {
     content: attr(data-label);

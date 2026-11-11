@@ -861,7 +861,11 @@ copre. All'apertura nessun foglio è aperto.
   Richiedi mostra «LRS-50-5 · 5 V 10 A (needs 8 A)». Senza LED resta nascosta.
 - **Pagina Parts** (`parts.html`, `src/ui/parts.ts`), pubblica e in inglese: le tabelle del catalogo
   alimentatori divise per tipo (Plug-in adapter, Enclosed, Waterproof), con corrente e codice d'ordine a
-  5/12/24 V, misure e prezzo; poi il controller e i profili striscia. La riga dell'ancora è evidenziata.
+  5/12/24 V, misure e prezzo; poi il controller e i profili striscia. La prima colonna è un disegno
+  SVG del modello (`src/parts/supplyArt.ts`), in obliquo e alla stessa scala per tutti (0,6 px/mm,
+  dalle misure del catalogo): scatola con feritoie e morsettiera (LRS), mattone nero con presa C14 e
+  cavo (GST60A), corpo stagno con due cavi (LPV). Disegni e non foto: Mean Well pubblica foto solo per
+  serie e quelle dei rivenditori non sono nostre. La riga dell'ancora è evidenziata.
   Sul telefono ogni riga diventa una scheda.
 - **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
   schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno

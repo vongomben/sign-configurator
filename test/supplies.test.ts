@@ -39,3 +39,16 @@ describe('catalogo degli alimentatori', () => {
     expect(bomAssembly([], [], 0, 60, 12).supply).toBeNull();
   });
 });
+
+describe('disegni degli alimentatori', () => {
+  it('uno per famiglia, alla stessa scala: il fronte è lungo L · ART_SCALE', async () => {
+    const { ART_SCALE, supplyArt } = await import('../src/parts/supplyArt');
+    for (const family of SUPPLIES) {
+      const svg = supplyArt(family);
+      expect(svg).toContain('viewBox="0 0 175 72"');
+      expect(svg).toContain(`${family.name}, `);
+      const front = /<rect x="[\d.]+" y="[\d.]+" width="([\d.]+)"/.exec(svg.slice(svg.indexOf('<rect')));
+      expect(Number(front![1])).toBeCloseTo(family.sizeMm[0] * ART_SCALE, 0);
+    }
+  });
+});

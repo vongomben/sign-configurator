@@ -3,6 +3,7 @@
 
 import './parts.css';
 import { CONTROLLER, STRIP_PROFILES, STRIP_VOLTAGES } from '../config';
+import { supplyArt } from '../parts/supplyArt';
 import { SUPPLIES, type SupplyFamily, type SupplyKind } from '../parts/supplies';
 
 const KINDS: { kind: SupplyKind; title: string; text: string }[] = [
@@ -37,6 +38,7 @@ function ampsCell(family: SupplyFamily, volts: number): string {
 function row(family: SupplyFamily): string {
   const [l, w, h] = family.sizeMm;
   return `<tr id="${family.id}">
+    <td class="art" data-label="">${supplyArt(family)}</td>
     <th scope="row"><a href="${esc(family.datasheet)}" target="_blank" rel="noopener">${esc(family.name)}</a>
       ${family.note ? `<small>${esc(family.note)}</small>` : ''}</th>
     <td data-label="Power">${family.watts} W</td>
@@ -49,7 +51,7 @@ function row(family: SupplyFamily): string {
 function table(kind: SupplyKind): string {
   const families = SUPPLIES.filter((f) => f.kind === kind);
   return `<table>
-    <thead><tr><th scope="col">Model</th><th scope="col">Power</th>
+    <thead><tr><th scope="col"><span class="sr-only">Drawing</span></th><th scope="col">Model</th><th scope="col">Power</th>
       ${STRIP_VOLTAGES.map((v) => `<th scope="col">${v} V</th>`).join('')}
       <th scope="col">Size (L × W × H)</th><th scope="col">Price</th></tr></thead>
     <tbody>${families.map(row).join('')}</tbody>
@@ -77,7 +79,8 @@ document.querySelector('#parts')!.innerHTML = `
       ({ kind, title, text }) => `<h3>${title}</h3><p>${text}</p><div class="scroll">${table(kind)}</div>`,
     ).join('')}
     <p class="fine">Prices: average for one piece, excluding VAT, November 2026. They vary a lot by seller.
-      Current and size from the datasheets (click a model): check them before ordering.</p>
+      Current and size from the datasheets (click a model): check them before ordering.
+      Drawings are not photos: they are all at the same scale, from the sizes above.</p>
   </section>
 
   <section id="controller">
