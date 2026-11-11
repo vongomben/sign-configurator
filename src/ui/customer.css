@@ -6,7 +6,7 @@
   --sheet: #f6f1ea;
   --line: rgba(28, 25, 22, 0.12);
   --dock: #161311;
-  --stage: #3a3a3e;
+  --stage: #5c5c62;
   color: var(--ink);
   font-family: system-ui, sans-serif;
   background: var(--stage);

@@ -626,7 +626,7 @@ function selectKind(kind: 'text' | 'image'): void {
 }
 
 // Grigio scuro: il neon resta acceso sul fondo, e cornice nera e fondali si staccano (SPEC §12.2).
-const STAGE_BACKGROUND = 0x3a3a3e;
+const STAGE_BACKGROUND = 0x5c5c62;
 const scene = mountSignScene(stage, { background: STAGE_BACKGROUND });
 const generator = createGenerator();
 applyNeon(color.value);
