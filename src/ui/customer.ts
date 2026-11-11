@@ -20,6 +20,7 @@ import {
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { S, customerMessage, customerMessages } from './strings';
+import type { BomSupply } from '../export/bom';
 import { plateSvgFileName, stlFileName } from './signSlug';
 import { plateToSvg } from '../export/plate';
 import {
@@ -155,7 +156,7 @@ app.innerHTML = `
               ${PLUGS.map((plug) => `<option value="${plug.value}">${plug.short}</option>`).join('')}
             </select>
           </label>
-          <p id="preview-supply" hidden></p>
+          <a id="preview-supply" href="parts.html" target="_blank" rel="noopener" hidden></a>
         </div>
       </div>
     </div>
@@ -268,7 +269,7 @@ const sheetClose = document.querySelector<HTMLButtonElement>('#sheet-close')!;
 const openRequest = document.querySelector<HTMLButtonElement>('#open-request')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const status = document.querySelector<HTMLElement>('#preview-status')!;
-const supply = document.querySelector<HTMLElement>('#preview-supply')!;
+const supply = document.querySelector<HTMLAnchorElement>('#preview-supply')!;
 const plugInput = document.querySelector<HTMLSelectElement>('select[name="plug"]')!;
 const plugPill = document.querySelector<HTMLElement>('.plug-pill')!;
 const plugIcon = document.querySelector<HTMLElement>('.plug-icon')!;
@@ -503,7 +504,13 @@ function renderSummary(): void {
   rows.push([t.controller, `${CONTROLLER.name} (${CONTROLLER.model})`]);
   rows.push([t.plug, t.plugValue(plugOf(plugInput.value).label)]);
   if (lastPower) {
-    rows.push([t.supply, `${lastPower.voltageV} V · ${lastPower.supplyA} A`]);
+    const model = lastPower.supply;
+    rows.push([
+      t.supply,
+      model
+        ? S.supply.value(model.model, lastPower.voltageV, model.amps, lastPower.supplyA)
+        : S.supply.bare(lastPower.voltageV, lastPower.supplyA),
+    ]);
     for (const warning of customerMessages(lastPower.warnings)) rows.push([t.warning, warning]);
   }
   if (overrides.EDGE_PROFILE) {
@@ -786,12 +793,16 @@ function saveStl(name: string, buffer: ArrayBuffer | string, type = 'model/stl')
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Pillola in basso a destra: alimentatore a 5 V, se la distinta lo conosce. */
 /** Alimentatore consigliato e limiti del controller, dall'ultima generazione. */
-let lastPower: { voltageV: number; supplyA: number; warnings: string[] } | null = null;
+let lastPower: { voltageV: number; supplyA: number; supply: BomSupply | null; warnings: string[] } | null = null;
 
-/** Pillola in basso a destra: tensione e ampere dell'alimentatore, rossa oltre i limiti del controller. */
-function showSupply(bom: { assembly?: { supplyA?: number; voltageV?: number; controllerWarnings?: string[] } } | null): void {
+/**
+ * Pillola in basso a destra, accanto alla spina: il modello consigliato dal catalogo, link alla
+ * pagina parts. Rossa oltre i limiti del controller.
+ */
+function showSupply(
+  bom: { assembly?: { supplyA?: number; voltageV?: number; supply?: BomSupply | null; controllerWarnings?: string[] } } | null,
+): void {
   const amps = bom?.assembly?.supplyA ?? 0;
   if (!(amps > 0)) {
     lastPower = null;
@@ -799,16 +810,19 @@ function showSupply(bom: { assembly?: { supplyA?: number; voltageV?: number; con
     supply.textContent = '';
     supply.classList.remove('is-over');
     supply.removeAttribute('title');
+    supply.href = 'parts.html';
     return;
   }
   const volts = bom?.assembly?.voltageV ?? DEFAULT_PARAMS.STRIP_V;
   const warnings = bom?.assembly?.controllerWarnings ?? [];
-  lastPower = { voltageV: volts, supplyA: amps, warnings };
+  const model = bom?.assembly?.supply ?? null;
+  lastPower = { voltageV: volts, supplyA: amps, supply: model, warnings };
   supply.hidden = false;
-  supply.textContent = `${volts} V · ${amps} A`;
+  supply.textContent = model ? S.supply.pill(model.model.replace(/-P1J$/, ''), volts, model.amps) : S.supply.bare(volts, amps);
+  supply.href = model ? `parts.html#${model.family}` : 'parts.html#power-supplies';
   supply.classList.toggle('is-over', warnings.length > 0);
-  if (warnings.length > 0) supply.title = warnings.join(' ');
-  else supply.removeAttribute('title');
+  const base = model ? S.supply.title(model.model, amps, volts) : S.supply.none(amps, volts);
+  supply.title = [base, ...customerMessages(warnings)].join(' ');
 }
 
 function fileLabel(): string {

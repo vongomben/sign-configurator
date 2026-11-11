@@ -543,6 +543,13 @@ fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
 - `voltageV`: tensione della striscia e dell'alimentatore (`STRIP_V`)
 - `maxCurrentA`: `totalLeds · LED_MAX_MA / 1000 · 5 / STRIP_V`, bianco pieno
 - `supplyA`: alimentatore consigliato, il minimo intero di ampere che copre la corrente massima con il 25% di margine
+- `supply`: modello consigliato dal catalogo, `{ model, family, watts, amps }` (`amps` nominali del
+  modello), o `null` se nessuno regge `supplyA`. Il catalogo (`src/parts/supplies.ts`) ha dieci famiglie
+  Mean Well, 100–240 V in ingresso, ciascuna a 5, 12 e 24 V dove esiste: l'adattatore con spina GST60A,
+  gli LRS-35/50/75/100/150/200/350 da quadro e gli LPV-60/100 stagni IP67, con correnti, misure (mm),
+  prezzo medio (€ per pezzo, IVA esclusa, novembre 2026) e scheda tecnica. `pickSupply(V, A)` sceglie il
+  GST60A se basta, altrimenti l'LRS più piccolo che regge la corrente alla tensione della striscia; gli
+  LPV (esterno) non vengono scelti
 - `controllerWarnings`: avvisi se `supplyA` supera i 10 A del controller (serve iniettare corrente o un
   secondo controller) o se i LED superano i suoi 800 IC. Non bloccano l'invio; entrano negli avvisi
   del generatore. Nella pagina cliente la pillola dell'alimentatore («12 V · 4 A») diventa rossa e
@@ -698,10 +705,10 @@ Stesso JSON e stessa `generatorVersion` producono gli stessi file (determinismo,
   va eseguito, e gli errori vanno corretti finché passa, prima di considerare il lavoro finito.
   Una tantum, dopo l'installazione delle dipendenze: `npx playwright install chromium`.
 - Deploy:
-  - **Il build pubblico contiene solo `index.html`** (pagina cliente): `npm run build:public`
+  - **Il build pubblico contiene solo `index.html` e `parts.html`** (pagina cliente e pagina Parts): `npm run build:public`
     (`vite build --mode public`).
   - Il sito pubblico è https://vongomben.github.io/sign-configurator/ . È il build di
-    `npm run build:public` (solo la pagina cliente). Il `base` in `vite.config.ts` resta
+    `npm run build:public` (pagina cliente e Parts). Il `base` in `vite.config.ts` resta
     `/sign-configurator/`.
   - `.github/workflows/deploy.yml`, a ogni push su `main`, esegue quel build e lo pubblica con
     `actions/upload-pages-artifact` e `actions/deploy-pages`. Perché parta, in Settings → Pages la
@@ -847,9 +854,15 @@ copre. All'apertura nessun foglio è aperto.
   tipo J), US (Stati Uniti e Canada, tipo A/B), in `src/ui/plugs.ts`. Il disegno e il title seguono la
   scelta; va in `customer.plug` e nel riepilogo di Richiedi («Spina: … · alimentatore 100–240 V»).
   Gli alimentatori sono universali, 100–240 V in ingresso: cambia solo la forma della spina, non la
-  tensione di rete. Accanto, se la distinta conosce l'alimentatore, pillola scura `#preview-supply`
-  con tensione e ampere consigliati (`5 V · 8 A`), rossa oltre i limiti del controller: bilancia il
-  conteggio dei LED. Senza LED resta nascosta.
+  tensione di rete. Accanto, se la distinta conosce l'alimentatore, pillola scura `a#preview-supply`
+  con il modello consigliato, la sua tensione e la sua corrente nominale (`LRS-50-5 · 5 V · 10 A`; senza
+  modello solo `5 V · 8 A`), rossa oltre i limiti del controller: bilancia il conteggio dei LED. È un
+  link alla pagina **Parts** (`parts.html#<famiglia>`, nuova scheda); il title dice quanti ampere servono.
+  Richiedi mostra «LRS-50-5 · 5 V 10 A (needs 8 A)». Senza LED resta nascosta.
+- **Pagina Parts** (`parts.html`, `src/ui/parts.ts`), pubblica e in inglese: le tabelle del catalogo
+  alimentatori divise per tipo (Plug-in adapter, Enclosed, Waterproof), con corrente e codice d'ordine a
+  5/12/24 V, misure e prezzo; poi il controller e i profili striscia. La riga dell'ancora è evidenziata.
+  Sul telefono ogni riga diventa una scheda.
 - **Dock** (`nav.dock`), sempre visibile: una barra verticale sul bordo destro, alta quanto lo
   schermo (64 px; 76 px su desktop), con sette strumenti grandi (≥ 48 px, icona + etichetta) uno
   sotto l'altro, centrati. Ciascuno con `data-tool`: `text` «Testo», `font` «Font», `size` «Misura», `color` «Colore», `image`

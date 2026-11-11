@@ -67,6 +67,16 @@ export const S = {
     aria: 'Power supply plug',
     title: (country: string) => `Power supply plug: ${country}. Universal input 100–240 V.`,
   },
+  supply: {
+    /** Pillola: modello, tensione e corrente nominale. */
+    pill: (model: string, volts: number, amps: number) => `${model} · ${volts} V · ${amps} A`,
+    /** Nessun modello del catalogo basta: solo quanto serve. */
+    bare: (volts: number, amps: number) => `${volts} V · ${amps} A`,
+    title: (model: string, needA: number, volts: number) =>
+      `Power supply: ${model}. The sign needs ${needA} A at ${volts} V (25 % margin). See all parts.`,
+    none: (needA: number, volts: number) => `No listed power supply gives ${needA} A at ${volts} V. See all parts.`,
+    value: (model: string, volts: number, amps: number, needA: number) => `${model} · ${volts} V ${amps} A (needs ${needA} A)`,
+  },
   order: { send: 'Send order', download: 'Download STL', blockedFallback: 'Fix the design before sending.' },
   status: {
     leds: (n: number) => `${n} LED`,

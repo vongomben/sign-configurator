@@ -6,6 +6,7 @@
 
 import { CONTROLLER, STRIP_VOLTAGES } from '../config';
 import { DOT_LED_COUNT } from '../geometry/lights';
+import { pickSupply } from '../parts/supplies';
 import type { ChainPath } from '../geometry/chain';
 import type { Point } from '../geometry/rasterize';
 import type { Params } from '../config';
@@ -56,8 +57,20 @@ export interface BomAssembly {
   maxCurrentA: number;
   /** Alimentatore consigliato, ampere alla tensione della striscia. */
   supplyA: number;
+  /** Modello consigliato dal catalogo (`pickSupply`); null se nessuno regge `supplyA`. */
+  supply: BomSupply | null;
   /** Limiti del controller superati (corrente, numero di LED); vuoto se ci sta. */
   controllerWarnings: string[];
+}
+
+export interface BomSupply {
+  /** Codice d'ordine, per esempio «GST60A12-P1J». */
+  model: string;
+  /** Famiglia del catalogo, ancora della pagina parts. */
+  family: string;
+  watts: number;
+  /** Corrente nominale del modello alla tensione della striscia. */
+  amps: number;
 }
 
 export interface BomCorner {
@@ -343,6 +356,12 @@ export function buildBom(
 
 const LEAD_MM = 200;
 
+function supplyOf(volts: number, amps: number): BomSupply | null {
+  const pick = pickSupply(volts, amps);
+  if (!pick) return null;
+  return { model: pick.variant.model, family: pick.family.id, watts: pick.family.watts, amps: pick.variant.amps };
+}
+
 /**
  * Riepilogo: saldature a 3 fili, giunti, filo in linea d'aria, corrente e alimentatore.
  * `ledMaxMa` è la corrente di un LED a 5 V: a parità di potenza per LED, a `voltageV` scala
@@ -420,6 +439,7 @@ export function bomAssembly(
     voltageV: volts,
     maxCurrentA: Math.round(maxCurrentA * 100) / 100,
     supplyA,
+    supply: supplyOf(volts, supplyA),
     controllerWarnings,
   };
 }
