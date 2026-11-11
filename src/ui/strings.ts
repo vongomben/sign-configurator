@@ -61,6 +61,8 @@ export const S = {
     voltage: 'Strip voltage',
     profile: 'Edge profile',
     controller: 'Controller',
+    box: 'Box',
+    tooSmall: 'too small',
   },
   more: { editPaths: 'Edit paths', restorePaths: 'Restore original' },
   plug: {
@@ -109,6 +111,9 @@ export const S = {
     plug: 'Plug',
     plugValue: (country: string) => `${country} · 100–240 V`,
     supply: 'Power supply',
+    box: 'Box',
+    boxValue: (name: string, inner: string, auto: boolean) => `${name} · ${inner} mm inside${auto ? ' (auto)' : ''}`,
+    noBox: 'No box',
     warning: 'Warning',
     profile: 'Edge profile',
     voltage: 'Strip voltage',
@@ -125,6 +130,8 @@ export function customerMessage(warning: string): string | null {
     [/tratto non uniforme/, () => 'Uneven stroke: try the Outline trace.'],
     [/^Puntino troppo piccolo|^Puntino non/, () => 'The dot is too small to light at this size.'],
     [/^Trattino fuori/, () => 'The dash does not fit inside the dot.'],
+    [/^Scatola (\S+) troppo piccola/, (m) => `The ${m[1]} box is too small for the power supply and controller.`],
+    [/^Nessuna scatola del catalogo/, () => 'No listed box fits the power supply and controller.'],
     [/oltre i (\d+) A del controller/, (m) => `Over the controller's ${m[1]} A: needs power injection or a second controller.`],
     [/oltre (?:gli|il limite di) (\d+) IC del controller/, (m) => `Over the controller's ${m[1]} LEDs: needs a second controller.`],
   ];

@@ -6,7 +6,8 @@
 
 import { controllerOf, STRIP_VOLTAGES } from '../config';
 import { DOT_LED_COUNT } from '../geometry/lights';
-import { pickSupply } from '../parts/supplies';
+import { BOX_AUTO, boxesThatFit, CONTROLLER_FALLBACK_MM, pickBox, type BoxItem } from '../parts/boxes';
+import { pickSupply, SUPPLIES } from '../parts/supplies';
 import type { ChainPath } from '../geometry/chain';
 import type { Point } from '../geometry/rasterize';
 import type { Params } from '../config';
@@ -59,6 +60,12 @@ export interface BomAssembly {
   supplyA: number;
   /** Modello consigliato dal catalogo (`pickSupply`); null se nessuno regge `supplyA`. */
   supply: BomSupply | null;
+  /** Scatola per alimentatore (se da quadro) e controller; null se non serve o «none». */
+  box: BomBox | null;
+  /** Scatola troppo piccola, o nessuna del catalogo basta. */
+  boxWarnings: string[];
+  /** Id delle scatole del catalogo che contengono i componenti, per il menu. */
+  boxesThatFit: string[];
   /** Controller scelto, id di `CONTROLLERS`. */
   controller: string;
   /** Limiti del controller superati (corrente, numero di LED); vuoto se ci sta. */
@@ -73,6 +80,17 @@ export interface BomSupply {
   watts: number;
   /** Corrente nominale del modello alla tensione della striscia. */
   amps: number;
+}
+
+export interface BomBox {
+  id: string;
+  model: string;
+  brand: string;
+  innerMm: [number, number, number];
+  fits: boolean;
+  auto: boolean;
+  /** Cosa ci va dentro. */
+  contents: string[];
 }
 
 export interface BomCorner {
@@ -315,7 +333,7 @@ export function buildBom(
     | 'LED_MAX_MA'
     | 'STRIP_V'
   > &
-    Partial<Pick<Params, 'CONTROLLER_ID'>>,
+    Partial<Pick<Params, 'CONTROLLER_ID' | 'BOX_ID'>>,
   warnings: readonly string[],
   crossings: readonly Point[] = [],
 ): Bom {
@@ -352,12 +370,47 @@ export function buildBom(
     wireSlotW: params.WIRE_SLOT_W,
     wireSlotL: params.WIRE_SLOT_L,
     corners,
-    assembly: bomAssembly(segments, corners, totalLeds, params.LED_MAX_MA, params.STRIP_V, params.CONTROLLER_ID),
+    assembly: bomAssembly(segments, corners, totalLeds, params.LED_MAX_MA, params.STRIP_V, params.CONTROLLER_ID, params.BOX_ID),
     warnings: [...warnings],
   };
 }
 
 const LEAD_MM = 200;
+
+/**
+ * Scatola dagli ingombri: l'alimentatore se è da quadro (l'adattatore con spina sta fuori) e
+ * il controller (misura indicativa se il costruttore non la pubblica).
+ */
+function boxOf(
+  supply: BomSupply | null,
+  controller: ReturnType<typeof controllerOf> | null,
+  boxId: string,
+): { box: BomBox | null; boxWarnings: string[]; boxesThatFit: string[] } {
+  const items: BoxItem[] = [];
+  const family = supply ? SUPPLIES.find((f) => f.id === supply.family) : undefined;
+  if (supply && family && family.kind === 'enclosed') items.push({ label: supply.model, sizeMm: family.sizeMm });
+  if (controller) items.push({ label: controller.model, sizeMm: controller.sizeMm ?? CONTROLLER_FALLBACK_MM });
+  const pick = pickBox(items, boxId);
+  const fitting = boxesThatFit(items);
+  const contents = items.map((i) => i.label);
+  if (!pick.box) {
+    const warnings = pick.auto && items.length > 0
+      ? [`Nessuna scatola del catalogo contiene ${contents.join(' + ')}.`]
+      : [];
+    return { box: null, boxWarnings: warnings, boxesThatFit: fitting };
+  }
+  const box: BomBox = {
+    id: pick.box.id,
+    model: pick.box.model,
+    brand: pick.box.brand,
+    innerMm: pick.box.innerMm,
+    fits: pick.fits,
+    auto: pick.auto,
+    contents,
+  };
+  const warnings = pick.fits ? [] : [`Scatola ${pick.box.model} troppo piccola per ${contents.join(' + ')}.`];
+  return { box, boxWarnings: warnings, boxesThatFit: fitting };
+}
 
 function supplyOf(volts: number, amps: number): BomSupply | null {
   const pick = pickSupply(volts, amps);
@@ -378,6 +431,7 @@ export function bomAssembly(
   ledMaxMa: number,
   voltageV = 5,
   controllerId?: string,
+  boxId: string = BOX_AUTO,
 ): BomAssembly {
   const used = new Set<string>();
   for (const corner of corners) {
@@ -434,6 +488,8 @@ export function bomAssembly(
       `${totalLeds} LED: oltre il limite di ${spec.maxIcs} IC del controller ${controller}. Serve un secondo controller.`,
     );
   }
+  const supply = supplyOf(volts, supplyA);
+  const { box, boxWarnings, boxesThatFit: fitting } = boxOf(supply, totalLeds === 0 ? null : spec, boxId);
   return {
     segments: segments.length,
     solderJoints,
@@ -444,7 +500,10 @@ export function bomAssembly(
     voltageV: volts,
     maxCurrentA: Math.round(maxCurrentA * 100) / 100,
     supplyA,
-    supply: supplyOf(volts, supplyA),
+    supply,
+    box,
+    boxWarnings,
+    boxesThatFit: fitting,
     controller: spec.id,
     controllerWarnings,
   };

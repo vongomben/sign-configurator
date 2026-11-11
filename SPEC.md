@@ -34,6 +34,7 @@ bend test.
 | `LED_PER_M` | 144 | striscia da 10 mm (COB: 160); il cliente sceglie fra 30, 60, 74, 96, 144 |
 | `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno a 5 V, per la stima dell'alimentatore |
 | `STRIP_V` | 5 | tensione della striscia: 5, 12 o 24 V (`STRIP_VOLTAGES`). A parità di potenza per LED la corrente scala come 5 / `STRIP_V` |
+| `BOX_ID` | `auto` | scatola dell'elettronica: `auto`, `none` o un id di `BOXES` (vedi Scatola) |
 | `CONTROLLER_ID` | `gl-c-309wl` | controller WLED, id di `CONTROLLERS` (vedi Controller): cambia i limiti di corrente e LED della distinta |
 
 Montaggio: striscia **piatta sul fondo del canale, LED verso chi guarda**, piegata di lato sfruttando le cerniere.
@@ -58,6 +59,20 @@ potenza 2 × 5 A + 10 A, 2 uscite dati, ~1200 LED), QuinLED Dig-Quad v4 (5–24 
 suggerisce per un buon frame rate. Il controller cambia solo gli avvisi della distinta (corrente e LED),
 non la geometria; va nell'ordine (`params.CONTROLLER_ID`) solo se diverso dallo standard, e un id
 sconosciuto nel link torna allo standard con un avviso.
+
+### Scatola (`src/parts/boxes.ts`)
+
+La scatola contiene il controller e, se è da quadro (LRS), l'alimentatore; l'adattatore con spina
+(GST60A) resta fuori e dentro entra solo il suo cavo DC. Catalogo `BOXES`: Hammond 1591XXLSBK,
+1591XXGSBK, 1591XXTSBK (ABS nero, IP54; misure esterne, interno stimato con pareti da 2,5 mm e 7 mm
+fra fondo e coperchio) e Gewiss serie 44 CE GW44204–GW44209 (tecnopolimero grigio, IP56, IP55 la
+GW44209; misure interne dal codice), con prezzo medio. Ingombri (`boxNeeds`): i componenti affiancati
+in fila lungo L o lungo W, 5 mm dalle pareti (`BOX_WALL_GAP_MM`), 10 mm fra loro (`BOX_ITEM_GAP_MM`),
+10 mm d'aria sopra per i cavi (`BOX_TOP_GAP_MM`); la scatola può essere girata. Un controller senza
+misure pubblicate conta 60 × 35 × 20 mm (`CONTROLLER_FALLBACK_MM`). Menu Tech `BOX_ID`: `auto` (default,
+la più piccola per volume interno che basta), `none` o l'id di una scatola; dopo ogni generazione
+le scatole che non bastano sono segnate «too small». Una scatola scelta troppo piccola, o nessuna che
+basti in automatico, dà un avviso nel riepilogo. Va nell'ordine solo se diversa da `auto`.
 
 ### Profilo striscia (`src/config.ts`)
 
@@ -563,6 +578,8 @@ fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
   prezzo medio (€ per pezzo, IVA esclusa, novembre 2026) e scheda tecnica. `pickSupply(V, A)` sceglie il
   GST60A se basta, altrimenti l'LRS più piccolo che regge la corrente alla tensione della striscia; gli
   LPV (esterno) non vengono scelti
+- `box`: scatola `{ id, model, brand, innerMm, fits, auto, contents }` o `null` (nessun LED, `none`,
+  o nessuna basta); `boxWarnings`; `boxesThatFit`: id delle scatole che bastano, dalla più piccola
 - `controller`: id del controller scelto (`CONTROLLER_ID`, default `gl-c-309wl`)
 - `controllerWarnings`: avvisi se `supplyA` supera i 10 A del controller (serve iniettare corrente o un
   secondo controller) o se i LED superano i suoi 800 IC. Non bloccano l'invio; entrano negli avvisi
@@ -883,7 +900,8 @@ copre. All'apertura nessun foglio è aperto.
   (`src/parts/controllerArt.ts`, 1,2 px/mm, stessa scala fra loro): scheda nuda con morsettiere verdi
   (Dig-Uno, Dig-Quad) o scheda in custodia (GLEDOPTO bianchi, Dig-Next-2 nero). Senza misure del
   costruttore la sagoma è tratteggiata, di misura indicativa (60 × 35 × 20 mm), con «size not published».
-  Ogni sezione (alimentatori, controller, strisce) ha un pulsante **+ Add one** che apre il modulo issue
+  La sezione Boxes elenca le scatole con disegno in scala (`src/parts/boxArt.ts`, 0,4 px/mm), misure
+  interne ed esterne e prezzo. Ogni sezione (alimentatori, controller, scatole, strisce) ha un pulsante **+ Add one** che apre il modulo issue
   GitHub `.github/ISSUE_TEMPLATE/new-part.yml` («New part», etichette `new-part` e `needs-review`), con
   il titolo «[Part] <categoria>: ». Le proposte entrano nel catalogo solo dopo la revisione del
   maintainer, a mano in `src/parts/supplies.ts` o `CONTROLLERS`. La riga dell'ancora è evidenziata.

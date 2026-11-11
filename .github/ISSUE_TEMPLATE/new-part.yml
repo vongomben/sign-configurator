@@ -16,6 +16,7 @@ body:
       options:
         - Power supply
         - Controller
+        - Box
         - LED strip
         - Other
     validations:
@@ -53,7 +54,7 @@ body:
     id: limits
     attributes:
       label: Limits
-      description: Power supplies — power in W. Controllers — max current, max LEDs, number of outputs. LED strips — width × thickness, cut pitch.
+      description: Power supplies — power in W. Controllers — max current, max LEDs, number of outputs. Boxes — inside size, IP rating. LED strips — width × thickness, cut pitch.
       placeholder: 15 A total · 1200 LEDs · 2 outputs
 
   - type: input

@@ -3,6 +3,8 @@
 
 import './parts.css';
 import { CONTROLLER, CONTROLLERS, STRIP_PROFILES, STRIP_VOLTAGES } from '../config';
+import { boxArt } from '../parts/boxArt';
+import { BOXES, BOX_ITEM_GAP_MM, BOX_TOP_GAP_MM, BOX_WALL_GAP_MM } from '../parts/boxes';
 import { controllerArt } from '../parts/controllerArt';
 import { supplyArt } from '../parts/supplyArt';
 import { SUPPLIES, type SupplyFamily, type SupplyKind } from '../parts/supplies';
@@ -72,6 +74,14 @@ const strips = STRIP_PROFILES.map(
     <td>${num(p.CHANNEL_W)} mm</td><td>${p.LED_PER_M} LED/m</td><td>${num(p.HINGE_PITCH)} mm</td><td>${num(p.CUT_PITCH)} mm</td></tr>`,
 ).join('');
 
+const mm = (size: readonly number[]): string => `${size.map(num).join(' × ')} mm`;
+
+const boxes = BOXES.map(
+  (b) => `<tr id="${b.id}"><td class="art">${boxArt(b)}</td><th scope="row"><a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.brand)} ${esc(b.model)}</a>
+    <small>${esc(b.material)}, ${esc(b.ip)}${b.innerEstimated ? '. Inside estimated from outside size.' : ''}</small></th>
+    <td>${mm(b.innerMm)}</td><td>${b.outerMm ? mm(b.outerMm) : '—'}</td><td>€${b.priceEur[0]}–${b.priceEur[1]}</td></tr>`,
+).join('');
+
 const controllers = CONTROLLERS.map((c) => {
   const size = c.sizeMm ? `${num(c.sizeMm[0])} × ${num(c.sizeMm[1])} × ${num(c.sizeMm[2])} mm` : '—';
   return `<tr id="${c.id}"><td class="art">${controllerArt(c)}</td><th scope="row"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a>
@@ -114,6 +124,21 @@ document.querySelector('#parts')!.innerHTML = `
       or a bigger controller. Max LEDs: the maker's figure, or about 600 per output, which WLED suggests for a
       smooth frame rate. Check the maker's page (click a model) before ordering.
       Drawings are not photos; a dashed outline means the maker does not publish the size.</p>
+  </section>
+
+  <section id="boxes">
+    <div class="section-head"><h2>Boxes</h2>${addOne('Box')}</div>
+    <p class="lead">The box holds the controller and, when it has screw terminals, the power supply.
+      A plug-in adapter stays outside: only its DC cable goes in. The configurator picks the smallest box
+      that fits, or you choose one in Tech.</p>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col"><span class="sr-only">Drawing</span></th><th scope="col">Model</th>
+        <th scope="col">Inside (L × W × H)</th><th scope="col">Outside</th><th scope="col">Price</th></tr></thead>
+      <tbody>${boxes}</tbody>
+    </table></div>
+    <p class="fine">Fit: parts side by side, in a row along either side, ${BOX_WALL_GAP_MM} mm from the walls,
+      ${BOX_ITEM_GAP_MM} mm apart and ${BOX_TOP_GAP_MM} mm of room above for the wires. Controllers without a
+      published size count as 60 × 35 × 20 mm. Prices: one piece, excluding VAT, November 2026.</p>
   </section>
 
   <section id="strips">

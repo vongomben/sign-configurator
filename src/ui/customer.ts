@@ -20,7 +20,8 @@ import {
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { S, customerMessage, customerMessages } from './strings';
-import type { BomSupply } from '../export/bom';
+import type { BomBox, BomSupply } from '../export/bom';
+import { BOXES } from '../parts/boxes';
 import { plateSvgFileName, stlFileName } from './signSlug';
 import { plateToSvg } from '../export/plate';
 import {
@@ -36,7 +37,7 @@ import {
 import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
 import { PLUGS, plugOf } from './plugs';
-import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, controllerOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
+import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, controllerOptions, boxOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -114,6 +115,12 @@ const techGroups = TECH_GROUPS.map((group) => `
       <span>${S.tech.controller} <small>CONTROLLER_ID</small></span>
       <select name="tech-CONTROLLER_ID">
         ${controllerOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+    </label>
+    <label class="tech-field">
+      <span>${S.tech.box} <small>BOX_ID</small></span>
+      <select name="tech-BOX_ID">
+        ${boxOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>` : ''}
     ${group.id === 'edges' ? `
@@ -400,13 +407,24 @@ const techProfileInput = document.querySelector<HTMLSelectElement>('select[name=
 const techDensityInput = document.querySelector<HTMLSelectElement>('select[name="tech-LED_PER_M"]')!;
 const techVoltageInput = document.querySelector<HTMLSelectElement>('select[name="tech-STRIP_V"]')!;
 const techControllerInput = document.querySelector<HTMLSelectElement>('select[name="tech-CONTROLLER_ID"]')!;
+const techBoxInput = document.querySelector<HTMLSelectElement>('select[name="tech-BOX_ID"]')!;
+const boxLabels = new Map([...techBoxInput.options].map((o) => [o.value, o.textContent ?? '']));
+
+/** Scatole che non contengono alimentatore e controller: «too small» nel menu. */
+function markBoxes(fitting: readonly string[] | null): void {
+  for (const option of techBoxInput.options) {
+    const base = boxLabels.get(option.value) ?? option.textContent ?? '';
+    const small = fitting !== null && BOXES.some((b) => b.id === option.value) && !fitting.includes(option.value);
+    option.textContent = small ? `${base} — ${S.tech.tooSmall}` : base;
+  }
+}
 const techReset = document.querySelector<HTMLButtonElement>('#tech-reset')!;
 
 /** Override dell'ordine: la cornice dalla barra, il resto dallo strumento Tecnica. */
 function orderParams(): Partial<Params> {
   const numbers: Partial<Record<TechNumericKey, string>> = {};
   for (const [key, input] of techNumberInputs) numbers[key] = input.value;
-  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value, stripV: techVoltageInput.value, controller: techControllerInput.value }) };
+  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value, stripV: techVoltageInput.value, controller: techControllerInput.value, box: techBoxInput.value }) };
 }
 
 const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMarginMm"]')!;
@@ -519,6 +537,8 @@ function renderSummary(): void {
         ? S.supply.value(model.model, lastPower.voltageV, model.amps, lastPower.supplyA)
         : S.supply.bare(lastPower.voltageV, lastPower.supplyA),
     ]);
+    const box = lastPower.box;
+    rows.push([t.box, box ? t.boxValue(`${box.brand} ${box.model}`, box.innerMm.join(' × '), box.auto) : t.noBox]);
     for (const warning of customerMessages(lastPower.warnings)) rows.push([t.warning, warning]);
   }
   if (overrides.EDGE_PROFILE) {
@@ -802,18 +822,35 @@ function saveStl(name: string, buffer: ArrayBuffer | string, type = 'model/stl')
 }
 
 /** Alimentatore consigliato e limiti del controller, dall'ultima generazione. */
-let lastPower: { voltageV: number; supplyA: number; supply: BomSupply | null; warnings: string[] } | null = null;
+let lastPower: {
+  voltageV: number;
+  supplyA: number;
+  supply: BomSupply | null;
+  box: BomBox | null;
+  warnings: string[];
+} | null = null;
 
 /**
  * Pillola in basso a destra, accanto alla spina: il modello consigliato dal catalogo, link alla
  * pagina parts. Rossa oltre i limiti del controller.
  */
 function showSupply(
-  bom: { assembly?: { supplyA?: number; voltageV?: number; supply?: BomSupply | null; controllerWarnings?: string[] } } | null,
+  bom: {
+    assembly?: {
+      supplyA?: number;
+      voltageV?: number;
+      supply?: BomSupply | null;
+      box?: BomBox | null;
+      boxWarnings?: string[];
+      boxesThatFit?: string[];
+      controllerWarnings?: string[];
+    };
+  } | null,
 ): void {
   const amps = bom?.assembly?.supplyA ?? 0;
   if (!(amps > 0)) {
     lastPower = null;
+    markBoxes(null);
     supply.hidden = true;
     supply.textContent = '';
     supply.classList.remove('is-over');
@@ -824,7 +861,9 @@ function showSupply(
   const volts = bom?.assembly?.voltageV ?? DEFAULT_PARAMS.STRIP_V;
   const warnings = bom?.assembly?.controllerWarnings ?? [];
   const model = bom?.assembly?.supply ?? null;
-  lastPower = { voltageV: volts, supplyA: amps, supply: model, warnings };
+  const box = bom?.assembly?.box ?? null;
+  lastPower = { voltageV: volts, supplyA: amps, supply: model, box, warnings: [...warnings, ...(bom?.assembly?.boxWarnings ?? [])] };
+  markBoxes(bom?.assembly?.boxesThatFit ?? null);
   supply.hidden = false;
   supply.textContent = model ? S.supply.pill(model.model.replace(/-P1J$/, ''), volts, model.amps) : S.supply.bare(volts, amps);
   supply.href = model ? `parts.html#${model.family}` : 'parts.html#power-supplies';
@@ -1095,6 +1134,7 @@ techProfileInput.addEventListener('change', onTechChange);
 techDensityInput.addEventListener('change', onTechChange);
 techVoltageInput.addEventListener('change', onTechChange);
 techControllerInput.addEventListener('change', onTechChange);
+techBoxInput.addEventListener('change', onTechChange);
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateShape"], input[name="plateMaterial"]')) {
   input.addEventListener('change', () => {
     syncPlateFields();
@@ -1121,6 +1161,7 @@ techReset.addEventListener('click', () => {
   techDensityInput.value = String(DEFAULT_LED_DENSITY);
   techVoltageInput.value = String(DEFAULT_PARAMS.STRIP_V);
   techControllerInput.value = DEFAULT_PARAMS.CONTROLLER_ID;
+  techBoxInput.value = DEFAULT_PARAMS.BOX_ID;
   lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
   onTechChange();
 });

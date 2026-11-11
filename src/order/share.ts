@@ -1,5 +1,6 @@
 // Link e file dell'ordine (SPEC §12.6). Mai un'eccezione: un hash rotto diventa un avviso.
 
+import { BOX_AUTO, BOX_NONE, BOXES } from '../parts/boxes';
 import {
   GENERATOR_VERSION,
   STRIP_VOLTAGES,
@@ -312,6 +313,11 @@ function paramsOf(value: unknown, warnings: string[]): Partial<Params> {
     const letter = value.MIN_LETTER_H === null ? null : finite(value.MIN_LETTER_H);
     if (value.MIN_LETTER_H === null || letter !== null) params.MIN_LETTER_H = letter;
     else warnings.push('Parametro MIN_LETTER_H ignorato.');
+  }
+  if ('BOX_ID' in value) {
+    const box = value.BOX_ID;
+    if (typeof box === 'string' && (box === BOX_AUTO || box === BOX_NONE || BOXES.some((b) => b.id === box))) params.BOX_ID = box;
+    else warnings.push('Scatola sconosciuta: scelta automatica.');
   }
   if ('CONTROLLER_ID' in value) {
     if (typeof value.CONTROLLER_ID === 'string' && CONTROLLERS.some((c) => c.id === value.CONTROLLER_ID)) {

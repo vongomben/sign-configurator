@@ -244,6 +244,8 @@ export interface Params {
   STRIP_V: number;
   /** Controller WLED, id di `CONTROLLERS`. Cambia solo i limiti della distinta. */
   CONTROLLER_ID: string;
+  /** Scatola dell'elettronica: 'auto' (la più piccola che basta), 'none' o l'id di `BOXES`. */
+  BOX_ID: string;
 
   // Geometria (SPEC §3)
   CHANNEL_W: number;
@@ -305,6 +307,7 @@ export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
   LED_MAX_MA: 60,
   STRIP_V: 5,
   CONTROLLER_ID: 'gl-c-309wl',
+  BOX_ID: 'auto',
 
   CHANNEL_W: DEFAULT_STRIP.CHANNEL_W,
   /** Striscia (6 mm) più 6 mm fra i LED e il diffusore, come con la COB. */
