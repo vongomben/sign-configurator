@@ -812,7 +812,7 @@ Niente procedura a passi. La prima cosa che si vede è l'insegna «Ciao» accesa
 Una sola schermata (`100dvh`): la pagina non scorre mai. Gli stili stanno in `src/ui/customer.css`
 (importato da `customer.ts`), con il font di sistema e senza stili inline. `#stage` e il suo canvas
 sono alti il 100 % con `!important`: `scene.ts` lascia il `70vh` inline perché lo usa anche l'admin.
-Lo sfondo dell'anteprima cliente è grigio scuro (`#3a3a3e`, `--stage` in `customer.css` e
+Lo sfondo dell'anteprima cliente è grigio medio (`#5c5c62`, `--stage` in `customer.css` e
 `STAGE_BACKGROUND` in `customer.ts`): sul nero cornice e fondali sparivano, il neon resta acceso
 lo stesso. L'admin resta sul muro chiaro di §5.
 
