@@ -29,42 +29,47 @@ export interface TechField {
 }
 
 export interface TechGroup {
+  id: 'strip' | 'channel' | 'wires' | 'edges';
   title: string;
   fields: readonly TechField[];
 }
 
 export const TECH_GROUPS: readonly TechGroup[] = [
   {
-    title: 'Striscia LED',
+    id: 'strip',
+    title: 'LED strip',
     fields: [
-      { key: 'STRIP_W', label: 'Larghezza LED', unit: 'mm', min: 1, max: 20, step: 0.1 },
-      { key: 'STRIP_T', label: 'Spessore LED', unit: 'mm', min: 0.2, max: 6, step: 0.1 },
-      { key: 'HINGE_PITCH', label: 'Passo delle cerniere', unit: 'mm', min: 1, max: 50, step: 0.1 },
-      { key: 'HINGE_MAX_DEG', label: 'Piega massima per cerniera', unit: '°', min: 5, max: 90, step: 1 },
+      { key: 'STRIP_W', label: 'Strip width', unit: 'mm', min: 1, max: 20, step: 0.1 },
+      { key: 'STRIP_T', label: 'Strip thickness', unit: 'mm', min: 0.2, max: 6, step: 0.1 },
+      { key: 'HINGE_PITCH', label: 'Hinge pitch', unit: 'mm', min: 1, max: 50, step: 0.1 },
+      { key: 'HINGE_MAX_DEG', label: 'Max bend per hinge', unit: '°', min: 5, max: 90, step: 1 },
     ],
   },
   {
-    title: 'Canale',
+    id: 'channel',
+    title: 'Channel',
     fields: [
-      { key: 'CHANNEL_W', label: 'Larghezza del varco', unit: 'mm', min: 1, max: 25, step: 0.1 },
-      { key: 'CHANNEL_DEPTH', label: 'Profondità del varco', unit: 'mm', min: 1, max: 40, step: 0.1 },
-      { key: 'FLOOR', label: 'Spessore del fondo', unit: 'mm', min: 1, max: 20, step: 0.1 },
+      { key: 'CHANNEL_W', label: 'Channel width', unit: 'mm', min: 1, max: 25, step: 0.1 },
+      { key: 'CHANNEL_DEPTH', label: 'Channel depth', unit: 'mm', min: 1, max: 40, step: 0.1 },
+      { key: 'FLOOR', label: 'Floor thickness', unit: 'mm', min: 1, max: 20, step: 0.1 },
     ],
   },
   {
-    title: 'Fili',
+    id: 'wires',
+    title: 'Wires',
     fields: [
-      { key: 'WIRE_SLOT_W', label: 'Larghezza asola', unit: 'mm', min: 0.5, max: 25, step: 0.1 },
-      { key: 'WIRE_SLOT_L', label: 'Lunghezza asola', unit: 'mm', min: 0.5, max: 30, step: 0.1 },
-      { key: 'SLOT_LIP_CHAMFER', label: 'Smusso del labbro', unit: 'mm', min: 0, max: 10, step: 0.1 },
+      { key: 'WIRE_SLOT_W', label: 'Slot width', unit: 'mm', min: 0.5, max: 25, step: 0.1 },
+      { key: 'WIRE_SLOT_L', label: 'Slot length', unit: 'mm', min: 0.5, max: 30, step: 0.1 },
+      { key: 'SLOT_LIP_CHAMFER', label: 'Lip chamfer', unit: 'mm', min: 0, max: 10, step: 0.1 },
     ],
   },
   {
-    title: 'Bordi',
+    id: 'edges',
+    title: 'Edges',
     fields: [
-      { key: 'CHAMFER_SIZE', label: 'Altezza smusso', unit: 'mm', min: 0, max: 40, step: 0.1 },
-      { key: 'CHAMFER_ANGLE', label: 'Angolo smusso', unit: '°', min: 1, max: 89, step: 1 },
-      { key: 'LAYER_STEP', label: 'Altezza layer', unit: 'mm', min: 0.04, max: 1, step: 0.02 },
+      { key: 'CHAMFER_SIZE', label: 'Chamfer height', unit: 'mm', min: 0, max: 40, step: 0.1 },
+      { key: 'CHAMFER_ANGLE', label: 'Chamfer angle', unit: '°', min: 1, max: 89, step: 1 },
+      { key: 'LAYER_STEP', label: 'Layer height', unit: 'mm', min: 0.04, max: 1, step: 0.02 },
     ],
   },
 ];
@@ -72,10 +77,10 @@ export const TECH_GROUPS: readonly TechGroup[] = [
 export const TECH_FIELDS: readonly TechField[] = TECH_GROUPS.flatMap((group) => group.fields);
 
 export const EDGE_PROFILES: readonly { value: EdgeProfile; label: string }[] = [
-  { value: 'square', label: 'Dritto' },
-  { value: 'outer', label: 'Smusso esterno' },
-  { value: 'inner', label: 'Smusso interno' },
-  { value: 'both', label: 'Smusso su entrambi i lati' },
+  { value: 'square', label: 'Square' },
+  { value: 'outer', label: 'Outer chamfer' },
+  { value: 'inner', label: 'Inner chamfer' },
+  { value: 'both', label: 'Both chamfers' },
 ];
 
 /**

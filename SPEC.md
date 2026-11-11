@@ -796,7 +796,14 @@ La pagina cliente è `index.html`. Si prova in locale con `npm run dev` e si pub
 4. **Ogni LED è indirizzabile.** Gli effetti sono di serie, non un sovrapprezzo (§2).
 
 Titolo di lavoro: *«Scrivi o disegna. Guarda la tua insegna come verrà stampata davvero.»*
-Tutti i testi in `src/ui/copy.it.ts`. **Barra di fiducia**: 3 voci da `copy.it.ts`; una voce con
+**Lingua**: la pagina cliente non dipende dall'italiano. Prima icone, numeri e unità (mm, cm, V, A,
+LED/m); il testo che resta è un inglese breve, tutto in `src/ui/strings.ts` (`S`), con `lang="en"`.
+Gli avvisi del generatore restano in italiano per admin e debug: `customerMessage` li traduce in
+poche frasi per il cliente (curve strette, tratti corti, sagome vicine, immagine poco definita,
+tratto non uniforme, puntino, limiti del controller) e scarta tutti gli altri; un errore di
+generazione diventa «Could not build this sign.» (il dettaglio va in console). Admin, debug, bend
+test e questa SPEC restano in italiano. `copy.it.ts` resta come archivio dei testi delle pagine
+future (§12.7–§12.9). **Barra di fiducia**: 3 voci da `copy.it.ts`; una voce con
 valore `null` (dato non ancora deciso, §10) non si mostra.
 
 ### 12.2 Mobile prima di tutto: l'insegna, poi gli strumenti

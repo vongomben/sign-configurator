@@ -19,7 +19,7 @@ import {
 } from '../order/schema';
 import { importRaster, paintThresholdPreview, rebuildRaster } from '../sources/rasterImport';
 import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
-import { copy } from './copy.it';
+import { S, customerMessage, customerMessages } from './strings';
 import { plateSvgFileName, stlFileName } from './signSlug';
 import { plateToSvg } from '../export/plate';
 import {
@@ -45,17 +45,7 @@ const HEIGHT_MIN_MM = 40;
 const HEIGHT_MAX_MM = 800;
 const SWATCHES = ['#ff2fd6', '#ff3b30', '#ff9500', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#bf5af2', '#f5f5f7'] as const;
 
-const TITLES: Record<string, string> = {
-  text: 'Testo',
-  font: 'Font',
-  size: 'Misura',
-  color: 'Colore',
-  image: 'Immagine',
-  plate: 'Fondale',
-  tech: 'Parametri tecnici',
-  more: 'Altro',
-  request: 'Richiedi',
-};
+const TITLES: Record<string, string> = { ...S.sections, request: S.sheet.request };
 
 function icon(path: string): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`;
@@ -86,14 +76,14 @@ const sizeChips = SIZES.map((size) => `
 const swatches = SWATCHES.map((hex) => `
   <button type="button" class="swatch" data-color="${hex}" aria-label="${hex}" aria-pressed="${hex === '#ff2fd6' ? 'true' : 'false'}"></button>`).join('');
 const tools = [
-  ['text', 'Testo'],
-  ['font', 'Font'],
-  ['size', 'Misura'],
-  ['color', 'Colore'],
-  ['image', 'Immagine'],
-  ['plate', 'Fondale'],
-  ['tech', 'Tecnica'],
-  ['more', 'Altro'],
+  ['text', S.tools.text],
+  ['font', S.tools.font],
+  ['size', S.tools.size],
+  ['color', S.tools.color],
+  ['image', S.tools.image],
+  ['plate', S.tools.plate],
+  ['tech', S.tools.tech],
+  ['more', S.tools.more],
 ] as const;
 const techGroups = TECH_GROUPS.map((group) => `
   <fieldset class="tech-group">
@@ -106,22 +96,22 @@ const techGroups = TECH_GROUPS.map((group) => `
         <span>${field.unit}</span>
       </span>
     </label>`).join('')}
-    ${group.title === 'Striscia LED' ? `
+    ${group.id === 'strip' ? `
     <label class="tech-field">
-      <span>Densità dei LED <small>LED_PER_M</small></span>
+      <span>${S.tech.density} <small>LED_PER_M</small></span>
       <select name="tech-LED_PER_M">
         ${ledDensityOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>
     <label class="tech-field">
-      <span>Tensione della striscia <small>STRIP_V</small></span>
+      <span>${S.tech.voltage} <small>STRIP_V</small></span>
       <select name="tech-STRIP_V">
         ${voltageOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>` : ''}
-    ${group.title === 'Bordi' ? `
+    ${group.id === 'edges' ? `
     <label class="tech-field">
-      <span>Profilo <small>EDGE_PROFILE</small></span>
+      <span>${S.tech.profile} <small>EDGE_PROFILE</small></span>
       <select name="tech-EDGE_PROFILE">
         ${EDGE_PROFILES.map((p) => `<option value="${p.value}"${p.value === DEFAULT_PARAMS.EDGE_PROFILE ? ' selected' : ''}>${p.label}</option>`).join('')}
       </select>
@@ -130,7 +120,7 @@ const techGroups = TECH_GROUPS.map((group) => `
 
 app.innerHTML = `
   <div class="shell" data-sheet="">
-    <h1 class="sr-only">Configuratore insegne neon</h1>
+    <h1 class="sr-only">${S.pageTitle}</h1>
     <div class="sr-only">
       <input type="radio" name="sourceKind" value="text" checked>
       <input type="radio" name="sourceKind" value="image">
@@ -140,28 +130,28 @@ app.innerHTML = `
       <canvas id="path-editor" hidden></canvas>
       <div class="hud">
         <div class="hud-view">
-          <div class="mode-switch" role="radiogroup" aria-label="Vista">
-            <label><input type="radio" name="mode" value="accesa" checked><span>Accesa</span></label>
-            <label><input type="radio" name="mode" value="spenta"><span>Spenta</span></label>
+          <div class="mode-switch" role="radiogroup" aria-label="${S.view.aria}">
+            <label><input type="radio" name="mode" value="accesa" checked><span>${S.view.on}</span></label>
+            <label><input type="radio" name="mode" value="spenta"><span>${S.view.off}</span></label>
           </div>
-          <div class="mode-switch diffuser-switch" role="radiogroup" aria-label="Diffusore">
-            <label><input type="radio" name="diffuser" value="on" checked><span>Con diffusore</span></label>
-            <label><input type="radio" name="diffuser" value="off"><span>Senza diffusore</span></label>
+          <div class="mode-switch diffuser-switch" role="radiogroup" aria-label="${S.diffuser.aria}">
+            <label><input type="radio" name="diffuser" value="on" checked><span>${S.diffuser.on}</span></label>
+            <label><input type="radio" name="diffuser" value="off"><span>${S.diffuser.off}</span></label>
           </div>
         </div>
         <label class="wall-field">
-          <span>Cornice mm</span>
-          <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}" aria-label="Cornice in millimetri">
+          <span>${S.frame.label}</span>
+          <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}" aria-label="${S.frame.aria}">
         </label>
-        <button type="button" id="open-request" aria-pressed="false">Richiedi</button>
+        <button type="button" id="open-request" aria-pressed="false">${S.request}</button>
       </div>
       <div class="stage-meta">
-        <p id="preview-status" data-generation="0">Generazione…</p>
+        <p id="preview-status" data-generation="0">${S.generating}</p>
         <div class="stage-power">
-          <label class="plug-pill" title="Spina dell'alimentatore: ${PLUGS[0]!.label}. Alimentatore universale 100–240 V.">
+          <label class="plug-pill" title="${S.plug.title(PLUGS[0]!.label)}">
             <span class="plug-icon">${PLUGS[0]!.icon}</span>
-            <span class="plug-label">Spina</span>
-            <select name="plug" aria-label="Spina dell'alimentatore">
+            <span class="plug-label">${S.plug.label}</span>
+            <select name="plug" aria-label="${S.plug.aria}">
               ${PLUGS.map((plug) => `<option value="${plug.value}">${plug.short}</option>`).join('')}
             </select>
           </label>
@@ -169,14 +159,14 @@ app.innerHTML = `
         </div>
       </div>
     </div>
-    <section class="sheet" aria-label="Strumento">
+    <section class="sheet" aria-label="${S.sheet.aria}">
       <header class="sheet-bar">
-        <h2 id="sheet-title">Testo</h2>
-        <button type="button" id="sheet-close">${copy.buttons.editorDone}</button>
+        <h2 id="sheet-title">${S.sheet.configure}</h2>
+        <button type="button" id="sheet-close">${S.sheet.done}</button>
       </header>
       <div class="sheet-body">
         <div class="pane" data-pane="text" hidden>
-          <input name="text" value="Ciao" autocomplete="off" aria-label="Testo">
+          <input name="text" value="Ciao" autocomplete="off" aria-label="${S.textAria}">
         </div>
         <div class="pane" data-pane="font" hidden>
           <div class="font-row">${fontCards}</div>
@@ -185,55 +175,56 @@ app.innerHTML = `
         <div class="pane" data-pane="size" hidden>
           <div class="sizes">${sizeChips}</div>
           <div class="height-step">
-            <button type="button" data-height-step="-10" aria-label="Meno 10 millimetri">−</button>
-            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="Altezza in millimetri">
-            <button type="button" data-height-step="10" aria-label="Più 10 millimetri">+</button>
+            <button type="button" data-height-step="-10" aria-label="${S.heightStepDown}">−</button>
+            <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="${S.heightAria}">
+            <button type="button" data-height-step="10" aria-label="${S.heightStepUp}">+</button>
           </div>
         </div>
         <div class="pane" data-pane="color" hidden>
           <div class="swatches">${swatches}</div>
-          <label class="color-free">Colore <input type="color" name="color" value="#ff2fd6"></label>
-          <div class="choice" role="radiogroup" aria-label="Effetto">
-            <label><input type="radio" name="effect" value="fisso" checked><span>Colore fisso</span></label>
-            <label><input type="radio" name="effect" value="arcobaleno"><span>Arcobaleno</span></label>
+          <label class="color-free">${S.color.free} <input type="color" name="color" value="#ff2fd6"></label>
+          <div class="choice" role="radiogroup" aria-label="${S.color.effectAria}">
+            <label><input type="radio" name="effect" value="fisso" checked><span>${S.color.fixed}</span></label>
+            <label><input type="radio" name="effect" value="arcobaleno"><span>${S.color.rainbow}</span></label>
           </div>
         </div>
         <div class="pane" data-pane="image" hidden>
           <label class="image-drop">
-            <span>Carica un'immagine</span>
+            <span>${S.image.upload}</span>
+            <small>${S.image.hint}</small>
             <input name="image" type="file" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,image/png,image/jpeg">
           </label>
-          <label class="field" data-source="trace" hidden>Traccia
+          <label class="field" data-source="trace" hidden>${S.image.trace}
             <select name="trace">
-              <option value="centerline" selected>Linea centrale</option>
-              <option value="outline">Contorno</option>
+              <option value="centerline" selected>${S.image.centerline}</option>
+              <option value="outline">${S.image.outline}</option>
             </select>
           </label>
-          <label class="field" data-source="raster" hidden>Soglia
+          <label class="field" data-source="raster" hidden>${S.image.threshold}
             <input name="threshold" type="range" min="0" max="255" step="1" value="128">
             <span id="threshold-value">128</span>
           </label>
-          <label data-source="raster" hidden><input name="invert" type="checkbox"> Inverti</label>
+          <label data-source="raster" hidden><input name="invert" type="checkbox"> ${S.image.invert}</label>
           <canvas id="threshold-preview" data-source="raster" hidden></canvas>
-          <button type="button" id="back-to-text" data-source="trace" hidden>Torna al testo</button>
+          <button type="button" id="back-to-text" data-source="trace" hidden>${S.image.backToText}</button>
         </div>
         <div class="pane" data-pane="plate" hidden>
-          <div class="choice plate-material" role="radiogroup" aria-label="Materiale del fondale">
-            <label><input type="radio" name="plateMaterial" value="none" checked><span>Nessuno</span></label>
+          <div class="choice plate-material" role="radiogroup" aria-label="${S.plate.materialAria}">
+            <label><input type="radio" name="plateMaterial" value="none" checked><span>${S.plate.none}</span></label>
             ${(Object.keys(PLATE_MATERIALS) as PlateMaterial[]).map((id) => `<label><input type="radio" name="plateMaterial" value="${id}"><span>${PLATE_MATERIALS[id].label} · ${PLATE_MATERIALS[id].thicknessMm} mm</span></label>`).join('')}
           </div>
-          <div class="choice plate-shape plate-option" role="radiogroup" aria-label="Forma del fondale">
+          <div class="choice plate-shape plate-option" role="radiogroup" aria-label="${S.plate.shapeAria}">
             ${PLATE_SHAPES.map((shape) => `<label><input type="radio" name="plateShape" value="${shape.value}"${shape.value === DEFAULT_PLATE.shape ? ' checked' : ''}><span>${shape.label}</span></label>`).join('')}
           </div>
           <label class="tech-field plate-option">
-            <span>Margine attorno all'insegna</span>
+            <span>${S.plate.margin}</span>
             <span class="tech-input">
               <input name="plateMarginMm" type="number" inputmode="decimal" min="${PLATE_MARGIN_MIN}" max="${PLATE_MARGIN_MAX}" step="1" value="${DEFAULT_PLATE.marginMm}">
               <span>mm</span>
             </span>
           </label>
           <label class="tech-field plate-option plate-corner">
-            <span>Raggio degli angoli</span>
+            <span>${S.plate.corner}</span>
             <span class="tech-input">
               <input name="plateCornerRMm" type="number" inputmode="decimal" min="${PLATE_CORNER_R_MIN}" max="${PLATE_CORNER_R_MAX}" step="1" value="${DEFAULT_PLATE.cornerRMm}">
               <span>mm</span>
@@ -242,16 +233,16 @@ app.innerHTML = `
           <p id="plate-size" class="tech-note" hidden></p>
         </div>
         <div class="pane" data-pane="tech" hidden>
-          <p class="tech-note">Cambiano la geometria stampata: valgono per l'anteprima, gli STL e la richiesta.</p>
+          <p class="tech-note">${S.tech.note}</p>
           ${techGroups}
           <div class="actions">
-            <button type="button" id="tech-reset">Valori predefiniti</button>
+            <button type="button" id="tech-reset">${S.tech.reset}</button>
           </div>
         </div>
         <div class="pane" data-pane="more" hidden>
           <div class="actions">
-            <button type="button" id="edit-paths" disabled>${copy.buttons.editPaths}</button>
-            <button type="button" id="restore-paths" disabled>${copy.buttons.restorePaths}</button>
+            <button type="button" id="edit-paths" disabled>${S.more.editPaths}</button>
+            <button type="button" id="restore-paths" disabled>${S.more.restorePaths}</button>
           </div>
           <div id="path-toolbar" hidden></div>
         </div>
@@ -259,13 +250,13 @@ app.innerHTML = `
           <dl id="summary"></dl>
           <p id="blocked-reason" hidden></p>
           <div class="request-actions">
-            <button type="button" id="submit-order">${copy.buttons.send}</button>
-            ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${copy.buttons.generating}</button>` : ''}
+            <button type="button" id="submit-order">${S.order.send}</button>
+            ${CUSTOMER_STL_DOWNLOAD ? `<button type="button" id="download-stl" disabled>${S.generating}</button>` : ''}
           </div>
         </div>
       </div>
     </section>
-    <nav class="dock" aria-label="Strumenti">
+    <nav class="dock" aria-label="${S.sheet.aria}">
       ${tools.map(([id, label]) => `<button type="button" data-tool="${id}" aria-pressed="false">${ICONS[id]}<span>${label}</span></button>`).join('')}
     </nav>
   </div>
@@ -286,7 +277,7 @@ const plugIcon = document.querySelector<HTMLElement>('.plug-icon')!;
 function syncPlug(): void {
   const plug = plugOf(plugInput.value);
   plugIcon.innerHTML = plug.icon;
-  plugPill.title = `Spina dell'alimentatore: ${plug.label}. Alimentatore universale 100–240 V.`;
+  plugPill.title = S.plug.title(plug.label);
 }
 plugInput.addEventListener('change', () => {
   syncPlug();
@@ -478,40 +469,45 @@ function syncSizeChips(): void {
 function renderSummary(): void {
   const effect = document.querySelector<HTMLInputElement>('input[name="effect"]:checked');
   const rows: [string, string][] = [];
-  if (imageMode()) rows.push(['Immagine', fileLabel() || 'immagine']);
+  const t = S.summary;
+  if (imageMode()) rows.push([t.image, fileLabel() || '—']);
   else {
     const font = FONTS.find((entry) => entry.id === fontInput.value);
-    rows.push(['Testo', textInput.value], ['Font', font?.name ?? fontInput.value]);
+    rows.push([t.text, textInput.value], [t.font, font?.name ?? fontInput.value]);
   }
   const mm = Number(heightInput.value);
   rows.push(
-    ['Misura', Number.isFinite(mm) ? cmLabel(mm) : ''],
-    ['Colore', color.value],
-    ['Effetto', effect?.value === 'arcobaleno' ? 'Arcobaleno' : 'Colore fisso'],
-    ['Diffusore', diffuserOn() ? 'Sì' : 'No'],
-    ['Cornice', `${wallMm().toFixed(1)} mm`],
+    [t.size, Number.isFinite(mm) ? cmLabel(mm) : ''],
+    [t.color, color.value],
+    [t.effect, effect?.value === 'arcobaleno' ? S.color.rainbow : S.color.fixed],
+    [t.diffuser, diffuserOn() ? t.yes : t.no],
+    [t.frame, `${wallMm().toFixed(1)} mm`],
   );
   const plate = plateChoice();
   rows.push([
-    'Fondale',
+    t.plate,
     plate
-      ? `${PLATE_SHAPES.find((s) => s.value === plate.shape)?.label ?? plate.shape}, ${PLATE_MATERIALS[plate.material].label}, margine ${plate.marginMm} mm`
-      : 'Nessuno',
+      ? t.plateValue(
+          PLATE_SHAPES.find((shape) => shape.value === plate.shape)?.label ?? plate.shape,
+          PLATE_MATERIALS[plate.material].label,
+          plate.marginMm,
+        )
+      : S.plate.none,
   ]);
   const overrides = orderParams();
   for (const field of TECH_FIELDS) {
     const value = overrides[field.key];
     if (value !== undefined) rows.push([field.label, `${value} ${field.unit}`]);
   }
-  if (overrides.LED_PER_M) rows.push(['Densità dei LED', `${overrides.LED_PER_M} LED/m`]);
-  rows.push(['Controller', `${CONTROLLER.name} (${CONTROLLER.model})`]);
-  rows.push(['Spina', `${plugOf(plugInput.value).label} · alimentatore 100–240 V`]);
+  if (overrides.LED_PER_M) rows.push([t.density, `${overrides.LED_PER_M} LED/m`]);
+  rows.push([t.controller, `${CONTROLLER.name} (${CONTROLLER.model})`]);
+  rows.push([t.plug, t.plugValue(plugOf(plugInput.value).label)]);
   if (lastPower) {
-    rows.push(['Alimentatore', `${lastPower.voltageV} V · ${lastPower.supplyA} A`]);
-    for (const warning of lastPower.warnings) rows.push(['Attenzione', warning]);
+    rows.push([t.supply, `${lastPower.voltageV} V · ${lastPower.supplyA} A`]);
+    for (const warning of customerMessages(lastPower.warnings)) rows.push([t.warning, warning]);
   }
   if (overrides.EDGE_PROFILE) {
-    rows.push(['Profilo', EDGE_PROFILES.find((p) => p.value === overrides.EDGE_PROFILE)?.label ?? overrides.EDGE_PROFILE]);
+    rows.push([t.profile, EDGE_PROFILES.find((p) => p.value === overrides.EDGE_PROFILE)?.label ?? overrides.EDGE_PROFILE]);
   }
   summary.replaceChildren();
   for (const [term, detail] of rows) {
@@ -583,7 +579,7 @@ sheetBody.addEventListener('scroll', () => {
 function openSheet(pane: string): void {
   const config = pane !== 'request';
   shell.dataset.sheet = config ? 'config' : 'request';
-  sheetTitle.textContent = config ? 'Configura' : (TITLES.request ?? 'Richiedi');
+  sheetTitle.textContent = config ? S.sheet.configure : S.sheet.request;
   sectionsBox.hidden = !config;
   requestPane.hidden = config;
   openRequest.setAttribute('aria-pressed', config ? 'false' : 'true');
@@ -677,7 +673,7 @@ for (const input of document.querySelectorAll<HTMLInputElement>('input[name="eff
   });
 }
 
-const DISCARD = 'Cambiare testo, font o immagine scarta le modifiche ai tracciati. Continuare?';
+const DISCARD = S.discard;
 
 let edited: { paths: OrderPath[]; crossings: OrderCrossing[] } | null = null;
 let sourceSegments: EditSegment[] = [];
@@ -708,7 +704,7 @@ function updateSubmit(): void {
   const blocked = liveBlocked || workerBlocked;
   submitButton.disabled = blocked;
   blockedReason.hidden = !blocked;
-  blockedReason.textContent = blocked ? (liveBlocked ? copy.warnings.editor : blockReason || 'Correggi prima di inviare.') : '';
+  blockedReason.textContent = blocked ? (liveBlocked ? S.editorBlocked : blockReason || S.order.blockedFallback) : '';
 }
 
 function rememberSource(): void {
@@ -769,7 +765,7 @@ function clearStl(): void {
   readyStl = null;
   if (!downloadButton) return;
   downloadButton.disabled = true;
-  downloadButton.textContent = copy.buttons.generating;
+  downloadButton.textContent = S.generating;
   delete downloadButton.dataset.ready;
 }
 
@@ -841,17 +837,17 @@ async function showSign(): Promise<void> {
   syncSourceFields();
   const heightMm = Number(heightInput.value);
   if (!(heightMm > 0)) {
-    status.textContent = "Scrivi un'altezza.";
+    status.textContent = S.status.needHeight;
     return;
   }
   const image = imageMode();
   const text = textInput.value.trim();
   if (!image && !text) {
-    status.textContent = "Scrivi un testo e un'altezza.";
+    status.textContent = S.status.needText;
     return;
   }
   if (image && !svgMarkup && !raster) {
-    status.textContent = 'Carica un file SVG, PNG o JPG.';
+    status.textContent = S.status.needImage;
     return;
   }
   let order: SignOrderV4;
@@ -865,7 +861,7 @@ async function showSign(): Promise<void> {
     });
     if (!built) {
       if (id !== request) return;
-      status.textContent = 'Nessun pixel di inchiostro con questa soglia.';
+      status.textContent = S.status.noInk;
       return;
     }
     paintThresholdPreview(thresholdPreview, built.binary);
@@ -878,13 +874,14 @@ async function showSign(): Promise<void> {
       order = customerOrder(imported.source);
     } catch (err) {
       if (id !== request) return;
-      status.textContent = err instanceof Error ? err.message : String(err);
+      console.warn(err);
+    status.textContent = S.status.failed;
       return;
     }
   } else {
     order = customerOrder({ kind: 'text', text, fontId: fontInput.value });
   }
-  status.textContent = 'Generazione…';
+  status.textContent = S.generating;
   const label = fileLabel();
   const withDiffuser = previewDiffuser;
   try {
@@ -904,7 +901,7 @@ async function showSign(): Promise<void> {
             : null,
       };
       downloadButton.disabled = false;
-      downloadButton.textContent = copy.buttons.downloadCustomerStl;
+      downloadButton.textContent = S.order.download;
       downloadButton.dataset.ready = stlFileName(label, heightMm, 'housing');
     }
     editButton.disabled = sourceSegments.length === 0 && !edited;
@@ -917,7 +914,11 @@ async function showSign(): Promise<void> {
     });
     if (result.plate) {
       plateSize.hidden = false;
-      plateSize.textContent = `Lastra ${cmLabel(result.plate.widthMm).replace(' cm', '')} × ${cmLabel(result.plate.heightMm)}, ${result.plate.holes.length} fori.`;
+      plateSize.textContent = S.plate.size(
+        cmLabel(result.plate.widthMm).replace(' cm', ''),
+        cmLabel(result.plate.heightMm).replace(' cm', ''),
+        result.plate.holes.length,
+      );
     } else {
       plateSize.hidden = true;
     }
@@ -930,20 +931,22 @@ async function showSign(): Promise<void> {
         warning.includes('sotto il passo di taglio') ||
         warning.startsWith('Sagome che si fondono'),
     );
-    blockReason = blocking ?? '';
+    blockReason = blocking ? (customerMessage(blocking) ?? '') : '';
     workerBlocked = blocksSubmit(result.warnings);
     updateSubmit();
     if (shell.dataset.sheet === 'request') renderSummary();
-    const leds = result.lightPoints.length > 0 ? `${result.lightPoints.length} LED` : 'Nessun LED sulla striscia.';
+    const leds = result.lightPoints.length > 0 ? S.status.leds(result.lightPoints.length) : S.status.noLeds;
+    // Al cliente solo gli avvisi che lo riguardano, tradotti; i bloccanti stanno in Richiedi.
     const shown = result.warnings.filter((warning) => {
       if (/bassa risoluzione|tratto non uniforme|^Puntino troppo piccolo|^Puntino non|^Trattino fuori/.test(warning)) return true;
       return image && warning.startsWith('Sagome che si fondono');
     });
-    const extra = [...notes, ...shown].join(' ');
+    const extra = customerMessages([...notes, ...shown]).join(' ');
     status.textContent = extra ? `${leds} ${extra}` : leds;
   } catch (err) {
     if (id !== request) return;
-    status.textContent = err instanceof Error ? err.message : String(err);
+    console.warn(err);
+    status.textContent = S.status.failed;
   }
 }
 
@@ -1128,7 +1131,7 @@ async function loadImage(file: File): Promise<void> {
   if (file.size > IMAGE_MAX_BYTES) {
     syncSourceFields();
     showSupply(null);
-    status.textContent = 'Il file supera 10 MB.';
+    status.textContent = S.status.fileTooBig;
     return;
   }
   if (isSvgFile(file)) {
@@ -1140,7 +1143,7 @@ async function loadImage(file: File): Promise<void> {
   if (!isRasterFile(file)) {
     syncSourceFields();
     showSupply(null);
-    status.textContent = 'Carica un file SVG, PNG o JPG.';
+    status.textContent = S.status.needImage;
     return;
   }
   try {
@@ -1159,7 +1162,8 @@ async function loadImage(file: File): Promise<void> {
   } catch (err) {
     syncSourceFields();
     showSupply(null);
-    status.textContent = err instanceof Error ? err.message : String(err);
+    console.warn(err);
+    status.textContent = S.status.failed;
   }
 }
 

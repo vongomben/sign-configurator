@@ -9,7 +9,7 @@ for (const file of PAGES) {
     await page.goto(file, { waitUntil: 'load' });
 
     if (file === 'index.html') {
-      await expect(page.locator('h1')).toHaveText('Configuratore insegne neon');
+      await expect(page.locator('h1')).toHaveText('Neon sign configurator');
     }
     if (file === 'admin.html') {
       await expect(page.locator('h1')).toHaveText('Admin');

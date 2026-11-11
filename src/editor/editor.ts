@@ -722,17 +722,17 @@ export async function openPathEditor(options: PathEditorOptions): Promise<PathEd
   }
 
   toolbar.replaceChildren();
-  button('Seleziona', 'select', () => setMode('select'));
-  button('Annulla', 'undo', () => undoAction());
-  button('Ripeti', 'redo', () => redoAction());
-  button('Elimina nodo', 'delete-node', () => deleteNode());
-  button('Elimina spezzone', 'delete-path', () => deletePath());
-  button('Spigolo o curva', 'corner', () => toggleCorner());
-  button('Taglia', 'cut', () => setMode('cut'));
-  button('Unisci', 'join', () => joinEnds());
-  button('Penna', 'pen', () => setMode(mode === 'pen' ? 'select' : 'pen'));
-  button('Sposta tutto', 'move-all', () => setMode(mode === 'move-all' ? 'select' : 'move-all'));
-  button('Sposta spezzone', 'move-one', () => setMode(mode === 'move-one' ? 'select' : 'move-one'));
+  button('Select', 'select', () => setMode('select'));
+  button('Undo', 'undo', () => undoAction());
+  button('Redo', 'redo', () => redoAction());
+  button('Delete node', 'delete-node', () => deleteNode());
+  button('Delete path', 'delete-path', () => deletePath());
+  button('Corner / curve', 'corner', () => toggleCorner());
+  button('Cut', 'cut', () => setMode('cut'));
+  button('Join', 'join', () => joinEnds());
+  button('Pen', 'pen', () => setMode(mode === 'pen' ? 'select' : 'pen'));
+  button('Move all', 'move-all', () => setMode(mode === 'move-all' ? 'select' : 'move-all'));
+  button('Move path', 'move-one', () => setMode(mode === 'move-one' ? 'select' : 'move-one'));
   refreshButtons();
 
   function onKey(event: KeyboardEvent): void {

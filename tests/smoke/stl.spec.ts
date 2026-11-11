@@ -29,7 +29,7 @@ test('index: Scarica STL di Ciao Torino, housing e diffusore', async ({ page }) 
   await page.locator('#open-request').click();
   await expect(button).toHaveAttribute('data-ready', 'ciao-torino-120mm-housing.stl');
   await expect(button).toBeEnabled();
-  await expect(button).toHaveText('Scarica STL');
+  await expect(button).toHaveText('Download STL');
   await inViewport(page, '#download-stl');
   await page.setViewportSize({ width: 390, height: 844 });
   await inViewport(page, '#download-stl');
@@ -60,9 +60,9 @@ test('index: con il fondale il download aggiunge la lastra in STL e il taglio la
   await page.locator('[data-tool="plate"]').click();
   await page.locator('input[name="plateShape"][value="rect"]').check({ force: true });
   await page.locator('input[name="plateMaterial"][value="wood"]').check({ force: true });
-  await expect(page.locator('#plate-size')).toContainText('Lastra');
+  await expect(page.locator('#plate-size')).toContainText('holes');
   await page.locator('#open-request').click();
-  await expect(page.locator('#summary')).toContainText('Legno');
+  await expect(page.locator('#summary')).toContainText('Wood');
   await expect(button).toBeEnabled();
 
   const downloads: Download[] = [];
