@@ -3,6 +3,7 @@
 import {
   GENERATOR_VERSION,
   STRIP_VOLTAGES,
+  CONTROLLERS,
   PLATE_CORNER_R,
   PLATE_CORNER_R_MAX,
   PLATE_CORNER_R_MIN,
@@ -311,6 +312,11 @@ function paramsOf(value: unknown, warnings: string[]): Partial<Params> {
     const letter = value.MIN_LETTER_H === null ? null : finite(value.MIN_LETTER_H);
     if (value.MIN_LETTER_H === null || letter !== null) params.MIN_LETTER_H = letter;
     else warnings.push('Parametro MIN_LETTER_H ignorato.');
+  }
+  if ('CONTROLLER_ID' in value) {
+    if (typeof value.CONTROLLER_ID === 'string' && CONTROLLERS.some((c) => c.id === value.CONTROLLER_ID)) {
+      params.CONTROLLER_ID = value.CONTROLLER_ID;
+    } else warnings.push('Controller sconosciuto: usato quello standard.');
   }
   if ('EDGE_PROFILE' in value) {
     const profile = oneOf(value.EDGE_PROFILE, ['square', 'outer', 'inner', 'both'] as const satisfies readonly EdgeProfile[]);

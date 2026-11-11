@@ -2,7 +2,7 @@
 // Solo inglese, come la pagina cliente.
 
 import './parts.css';
-import { CONTROLLER, STRIP_PROFILES, STRIP_VOLTAGES } from '../config';
+import { CONTROLLER, CONTROLLERS, STRIP_PROFILES, STRIP_VOLTAGES } from '../config';
 import { supplyArt } from '../parts/supplyArt';
 import { SUPPLIES, type SupplyFamily, type SupplyKind } from '../parts/supplies';
 
@@ -63,6 +63,13 @@ const strips = STRIP_PROFILES.map(
     <td>${num(p.CHANNEL_W)} mm</td><td>${p.LED_PER_M} LED/m</td><td>${num(p.HINGE_PITCH)} mm</td><td>${num(p.CUT_PITCH)} mm</td></tr>`,
 ).join('');
 
+const controllers = CONTROLLERS.map((c) => {
+  const size = c.sizeMm ? `${num(c.sizeMm[0])} × ${num(c.sizeMm[1])} × ${num(c.sizeMm[2])} mm` : '—';
+  return `<tr id="${c.id}"><th scope="row"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a>
+    <small>${esc(c.model)}${c.id === CONTROLLER.id ? ' · standard' : ''}${c.note ? `. ${esc(c.note)}` : ''}</small></th>
+    <td>${c.minV}–${c.maxV} V</td><td>${c.maxA} A</td><td>${c.maxIcs}</td><td>${c.outputs}</td><td>${size}</td></tr>`;
+}).join('');
+
 document.querySelector('#parts')!.innerHTML = `
   <header>
     <a class="back" href="./">← Configurator</a>
@@ -83,17 +90,18 @@ document.querySelector('#parts')!.innerHTML = `
       Drawings are not photos: they are all at the same scale, from the sizes above.</p>
   </section>
 
-  <section id="controller">
-    <h2>Controller</h2>
-    <dl>
-      <dt>Model</dt><dd>${esc(CONTROLLER.name)} (${esc(CONTROLLER.model)}), WLED</dd>
-      <dt>Input</dt><dd>${CONTROLLER.minV}–${CONTROLLER.maxV} V DC</dd>
-      <dt>Max current</dt><dd>${CONTROLLER.maxA} A total</dd>
-      <dt>Max LEDs</dt><dd>${CONTROLLER.maxIcs}</dd>
-      <dt>Outputs</dt><dd>${CONTROLLER.outputs}</dd>
-    </dl>
-    <p class="fine">Above ${CONTROLLER.maxA} A the power supply still fits, but the strip needs power injection
-      or a second controller. At 5 V that is about ${5 * CONTROLLER.maxA} W: long signs work better at 12 or 24 V.</p>
+  <section id="controllers">
+    <h2>Controllers</h2>
+    <p class="lead">ESP32 boards running WLED. Input voltage = strip voltage. The ${esc(CONTROLLER.name)} is
+      standard; the others are options in Tech, for longer signs or more power.</p>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">Model</th><th scope="col">Input</th><th scope="col">Max current</th>
+        <th scope="col">Max LEDs</th><th scope="col">Outputs</th><th scope="col">Size (L × W × H)</th></tr></thead>
+      <tbody>${controllers}</tbody>
+    </table></div>
+    <p class="fine">Above the max current the power supply still fits, but the strip needs power injection
+      or a bigger controller. Max LEDs: the maker's figure, or about 600 per output, which WLED suggests for a
+      smooth frame rate. Check the maker's page (click a model) before ordering.</p>
   </section>
 
   <section id="strips">

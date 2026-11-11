@@ -60,6 +60,7 @@ export const S = {
     density: 'LED density',
     voltage: 'Strip voltage',
     profile: 'Edge profile',
+    controller: 'Controller',
   },
   more: { editPaths: 'Edit paths', restorePaths: 'Restore original' },
   plug: {
@@ -125,7 +126,7 @@ export function customerMessage(warning: string): string | null {
     [/^Puntino troppo piccolo|^Puntino non/, () => 'The dot is too small to light at this size.'],
     [/^Trattino fuori/, () => 'The dash does not fit inside the dot.'],
     [/oltre i (\d+) A del controller/, (m) => `Over the controller's ${m[1]} A: needs power injection or a second controller.`],
-    [/oltre gli (\d+) IC del controller/, (m) => `Over the controller's ${m[1]} LEDs: needs a second controller.`],
+    [/oltre (?:gli|il limite di) (\d+) IC del controller/, (m) => `Over the controller's ${m[1]} LEDs: needs a second controller.`],
   ];
   for (const [pattern, phrase] of rules) {
     const match = warning.match(pattern);

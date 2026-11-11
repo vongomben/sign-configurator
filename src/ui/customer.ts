@@ -1,6 +1,6 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
-import { CONTROLLER, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
+import { controllerOf, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
 import { PRICING_VERSION } from '../pricing';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
@@ -36,7 +36,7 @@ import {
 import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
 import { PLUGS, plugOf } from './plugs';
-import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
+import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, controllerOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -108,6 +108,12 @@ const techGroups = TECH_GROUPS.map((group) => `
       <span>${S.tech.voltage} <small>STRIP_V</small></span>
       <select name="tech-STRIP_V">
         ${voltageOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+    </label>
+    <label class="tech-field">
+      <span>${S.tech.controller} <small>CONTROLLER_ID</small></span>
+      <select name="tech-CONTROLLER_ID">
+        ${controllerOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>` : ''}
     ${group.id === 'edges' ? `
@@ -393,13 +399,14 @@ const techNumberInputs = new Map<TechNumericKey, HTMLInputElement>(
 const techProfileInput = document.querySelector<HTMLSelectElement>('select[name="tech-EDGE_PROFILE"]')!;
 const techDensityInput = document.querySelector<HTMLSelectElement>('select[name="tech-LED_PER_M"]')!;
 const techVoltageInput = document.querySelector<HTMLSelectElement>('select[name="tech-STRIP_V"]')!;
+const techControllerInput = document.querySelector<HTMLSelectElement>('select[name="tech-CONTROLLER_ID"]')!;
 const techReset = document.querySelector<HTMLButtonElement>('#tech-reset')!;
 
 /** Override dell'ordine: la cornice dalla barra, il resto dallo strumento Tecnica. */
 function orderParams(): Partial<Params> {
   const numbers: Partial<Record<TechNumericKey, string>> = {};
   for (const [key, input] of techNumberInputs) numbers[key] = input.value;
-  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value, stripV: techVoltageInput.value }) };
+  return { WALL: wallMm(), ...techParams({ numbers, edgeProfile: techProfileInput.value, ledPerM: techDensityInput.value, stripV: techVoltageInput.value, controller: techControllerInput.value }) };
 }
 
 const plateMarginInput = document.querySelector<HTMLInputElement>('input[name="plateMarginMm"]')!;
@@ -501,7 +508,8 @@ function renderSummary(): void {
     if (value !== undefined) rows.push([field.label, `${value} ${field.unit}`]);
   }
   if (overrides.LED_PER_M) rows.push([t.density, `${overrides.LED_PER_M} LED/m`]);
-  rows.push([t.controller, `${CONTROLLER.name} (${CONTROLLER.model})`]);
+  const controller = controllerOf(overrides.CONTROLLER_ID);
+  rows.push([t.controller, `${controller.name} (${controller.model})`]);
   rows.push([t.plug, t.plugValue(plugOf(plugInput.value).label)]);
   if (lastPower) {
     const model = lastPower.supply;
@@ -1086,6 +1094,7 @@ for (const input of techNumberInputs.values()) input.addEventListener('input', o
 techProfileInput.addEventListener('change', onTechChange);
 techDensityInput.addEventListener('change', onTechChange);
 techVoltageInput.addEventListener('change', onTechChange);
+techControllerInput.addEventListener('change', onTechChange);
 for (const input of document.querySelectorAll<HTMLInputElement>('input[name="plateShape"], input[name="plateMaterial"]')) {
   input.addEventListener('change', () => {
     syncPlateFields();
@@ -1111,6 +1120,7 @@ techReset.addEventListener('click', () => {
   techProfileInput.value = DEFAULT_PARAMS.EDGE_PROFILE;
   techDensityInput.value = String(DEFAULT_LED_DENSITY);
   techVoltageInput.value = String(DEFAULT_PARAMS.STRIP_V);
+  techControllerInput.value = DEFAULT_PARAMS.CONTROLLER_ID;
   lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
   onTechChange();
 });

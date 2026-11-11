@@ -34,6 +34,7 @@ bend test.
 | `LED_PER_M` | 144 | striscia da 10 mm (COB: 160); il cliente sceglie fra 30, 60, 74, 96, 144 |
 | `LED_MAX_MA` | 60 | corrente di un LED a bianco pieno a 5 V, per la stima dell'alimentatore |
 | `STRIP_V` | 5 | tensione della striscia: 5, 12 o 24 V (`STRIP_VOLTAGES`). A parità di potenza per LED la corrente scala come 5 / `STRIP_V` |
+| `CONTROLLER_ID` | `gl-c-309wl` | controller WLED, id di `CONTROLLERS` (vedi Controller): cambia i limiti di corrente e LED della distinta |
 
 Montaggio: striscia **piatta sul fondo del canale, LED verso chi guarda**, piegata di lato sfruttando le cerniere.
 
@@ -45,6 +46,18 @@ non si verifica sul manuale. Gli IC si contano come i LED (una striscia a 12 o 2
 
 Raggio minimo derivato dal profilo: `R_MIN = HINGE_PITCH / (2·sin(HINGE_MAX_DEG/2))` (≈ 14,6 mm con 40°).
 Altezza minima di lettera derivata: `MIN_LETTER_H = 2·R_MIN`, il diametro della piega più stretta.
+
+### Controller (`CONTROLLERS` in `src/config.ts`)
+
+Controller WLED su ESP32; la tensione d'ingresso è quella della striscia. Standard il GLEDOPTO
+ESP32 Ultra Mini (GL-C-309WL: 5–24 V, 10 A, 800 LED, 2 uscite). Opzionali, nel menu Tech
+`CONTROLLER_ID`: GLEDOPTO GL-C-618WL (5–24 V, 15 A totali, 10 A per uscita, 4 uscite, Ethernet),
+QuinLED Dig-Uno v3.1 (5–24 V, 15 A, 2 uscite, 50 × 40 × 25 mm), QuinLED Dig-Next-2 (5–48 V, uscite di
+potenza 2 × 5 A + 10 A, 2 uscite dati, ~1200 LED), QuinLED Dig-Quad v4 (5–24 V, 30 A continui, 4 uscite,
+100 × 50 × 25 mm). Dove il costruttore non dà un limite di LED: ~600 per uscita, la soglia che WLED
+suggerisce per un buon frame rate. Il controller cambia solo gli avvisi della distinta (corrente e LED),
+non la geometria; va nell'ordine (`params.CONTROLLER_ID`) solo se diverso dallo standard, e un id
+sconosciuto nel link torna allo standard con un avviso.
 
 ### Profilo striscia (`src/config.ts`)
 
@@ -550,6 +563,7 @@ fori `DOT_WIRE_HOLE_D` e `ledCount` 1. Un puntino `"unlit"` non entra nella BOM.
   prezzo medio (€ per pezzo, IVA esclusa, novembre 2026) e scheda tecnica. `pickSupply(V, A)` sceglie il
   GST60A se basta, altrimenti l'LRS più piccolo che regge la corrente alla tensione della striscia; gli
   LPV (esterno) non vengono scelti
+- `controller`: id del controller scelto (`CONTROLLER_ID`, default `gl-c-309wl`)
 - `controllerWarnings`: avvisi se `supplyA` supera i 10 A del controller (serve iniettare corrente o un
   secondo controller) o se i LED superano i suoi 800 IC. Non bloccano l'invio; entrano negli avvisi
   del generatore. Nella pagina cliente la pillola dell'alimentatore («12 V · 4 A») diventa rossa e
@@ -861,7 +875,7 @@ copre. All'apertura nessun foglio è aperto.
   Richiedi mostra «LRS-50-5 · 5 V 10 A (needs 8 A)». Senza LED resta nascosta.
 - **Pagina Parts** (`parts.html`, `src/ui/parts.ts`), pubblica e in inglese: le tabelle del catalogo
   alimentatori divise per tipo (Plug-in adapter, Enclosed, Waterproof), con corrente e codice d'ordine a
-  5/12/24 V, misure e prezzo; poi il controller e i profili striscia. La prima colonna è un disegno
+  5/12/24 V, misure e prezzo; poi i controller (`CONTROLLERS`) e i profili striscia. La prima colonna è un disegno
   SVG del modello (`src/parts/supplyArt.ts`), in obliquo e alla stessa scala per tutti (0,6 px/mm,
   dalle misure del catalogo): scatola con feritoie e morsettiera (LRS), mattone nero con presa C14 e
   cavo (GST60A), corpo stagno con due cavi (LPV). Disegni e non foto: Mean Well pubblica foto solo per

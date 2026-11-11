@@ -4,7 +4,7 @@
 // ANCHOR_MIN_PER_SEGMENT se ci stanno.
 // Due asole DIN/DOUT vicine diventano una tasca: il filo fra gli spezzoni è 0 mm. Modulo puro.
 
-import { CONTROLLER, STRIP_VOLTAGES } from '../config';
+import { controllerOf, STRIP_VOLTAGES } from '../config';
 import { DOT_LED_COUNT } from '../geometry/lights';
 import { pickSupply } from '../parts/supplies';
 import type { ChainPath } from '../geometry/chain';
@@ -59,6 +59,8 @@ export interface BomAssembly {
   supplyA: number;
   /** Modello consigliato dal catalogo (`pickSupply`); null se nessuno regge `supplyA`. */
   supply: BomSupply | null;
+  /** Controller scelto, id di `CONTROLLERS`. */
+  controller: string;
   /** Limiti del controller superati (corrente, numero di LED); vuoto se ci sta. */
   controllerWarnings: string[];
 }
@@ -312,7 +314,8 @@ export function buildBom(
     | 'CROSSING_GAP'
     | 'LED_MAX_MA'
     | 'STRIP_V'
-  >,
+  > &
+    Partial<Pick<Params, 'CONTROLLER_ID'>>,
   warnings: readonly string[],
   crossings: readonly Point[] = [],
 ): Bom {
@@ -349,7 +352,7 @@ export function buildBom(
     wireSlotW: params.WIRE_SLOT_W,
     wireSlotL: params.WIRE_SLOT_L,
     corners,
-    assembly: bomAssembly(segments, corners, totalLeds, params.LED_MAX_MA, params.STRIP_V),
+    assembly: bomAssembly(segments, corners, totalLeds, params.LED_MAX_MA, params.STRIP_V, params.CONTROLLER_ID),
     warnings: [...warnings],
   };
 }
@@ -366,7 +369,7 @@ function supplyOf(volts: number, amps: number): BomSupply | null {
  * Riepilogo: saldature a 3 fili, giunti, filo in linea d'aria, corrente e alimentatore.
  * `ledMaxMa` è la corrente di un LED a 5 V: a parità di potenza per LED, a `voltageV` scala
  * come 5 / voltageV. L'alimentatore ha il 25 % di margine. Oltre i limiti del controller
- * (`CONTROLLER`) restano avvisi: serve iniettare corrente o un secondo controller.
+ * scelto (`controllerId`, di `CONTROLLERS`) restano avvisi: serve iniettare corrente o un secondo controller.
  */
 export function bomAssembly(
   segments: readonly BomSegment[],
@@ -374,6 +377,7 @@ export function bomAssembly(
   totalLeds: number,
   ledMaxMa: number,
   voltageV = 5,
+  controllerId?: string,
 ): BomAssembly {
   const used = new Set<string>();
   for (const corner of corners) {
@@ -417,16 +421,17 @@ export function bomAssembly(
   const maxCurrentA = ((totalLeds * Math.max(ledMaxMa, 0)) / 1000) * (5 / volts);
   const supplyA = totalLeds === 0 ? 0 : Math.max(1, Math.ceil(maxCurrentA * 1.25));
   const controllerWarnings: string[] = [];
-  const controller = `${CONTROLLER.name} (${CONTROLLER.model})`;
-  if (supplyA > CONTROLLER.maxA) {
+  const spec = controllerOf(controllerId);
+  const controller = `${spec.name} (${spec.model})`;
+  if (supplyA > spec.maxA) {
     controllerWarnings.push(
-      `Alimentatore da ${supplyA} A a ${volts} V: oltre i ${CONTROLLER.maxA} A del controller ${controller}. ` +
+      `Alimentatore da ${supplyA} A a ${volts} V: oltre i ${spec.maxA} A del controller ${controller}. ` +
         'Serve iniettare corrente lungo la striscia o un secondo controller.',
     );
   }
-  if (totalLeds > CONTROLLER.maxIcs) {
+  if (totalLeds > spec.maxIcs) {
     controllerWarnings.push(
-      `${totalLeds} LED: oltre gli ${CONTROLLER.maxIcs} IC del controller ${controller}. Serve un secondo controller.`,
+      `${totalLeds} LED: oltre il limite di ${spec.maxIcs} IC del controller ${controller}. Serve un secondo controller.`,
     );
   }
   return {
@@ -440,6 +445,7 @@ export function bomAssembly(
     maxCurrentA: Math.round(maxCurrentA * 100) / 100,
     supplyA,
     supply: supplyOf(volts, supplyA),
+    controller: spec.id,
     controllerWarnings,
   };
 }

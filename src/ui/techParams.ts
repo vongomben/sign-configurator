@@ -2,7 +2,7 @@
 // senza BANK_TRANSITION_L (non usato da [H]/[I]) e senza WALL, che sta sulla barra dell'anteprima.
 // Modulo puro: nessun DOM.
 
-import { DEFAULT_PARAMS, STRIP_VOLTAGES, type EdgeProfile, type Params } from '../config';
+import { CONTROLLERS, DEFAULT_PARAMS, STRIP_VOLTAGES, type EdgeProfile, type Params } from '../config';
 
 export type TechNumericKey =
   | 'STRIP_W'
@@ -101,6 +101,15 @@ export function voltageOptions(): { value: number; label: string; isDefault: boo
   return STRIP_VOLTAGES.map((value) => ({ value, label: `${value} V`, isDefault: value === DEFAULT_PARAMS.STRIP_V }));
 }
 
+/** Controller nel menu; predefinito quello standard. */
+export function controllerOptions(): { value: string; label: string; isDefault: boolean }[] {
+  return CONTROLLERS.map((c) => ({
+    value: c.id,
+    label: `${c.name} · ${c.maxA} A`,
+    isDefault: c.id === DEFAULT_PARAMS.CONTROLLER_ID,
+  }));
+}
+
 export interface TechInput {
   numbers: Partial<Record<TechNumericKey, string>>;
   edgeProfile: string;
@@ -108,6 +117,8 @@ export interface TechInput {
   ledPerM?: string;
   /** Valore del menu della tensione. Assente o sconosciuto: quella del profilo. */
   stripV?: string;
+  /** Id del controller. Assente o sconosciuto: quello standard. */
+  controller?: string;
 }
 
 /**
@@ -128,6 +139,8 @@ export function techParams(input: TechInput): Partial<Params> {
   if (profile && profile !== DEFAULT_PARAMS.EDGE_PROFILE) out.EDGE_PROFILE = profile;
   const volts = Number(input.stripV);
   if (STRIP_VOLTAGES.includes(volts) && volts !== DEFAULT_PARAMS.STRIP_V) out.STRIP_V = volts;
+  const controller = CONTROLLERS.find((c) => c.id === input.controller);
+  if (controller && controller.id !== DEFAULT_PARAMS.CONTROLLER_ID) out.CONTROLLER_ID = controller.id;
   if (input.ledPerM !== undefined) {
     const asked = Number(input.ledPerM);
     const density = LED_DENSITIES.includes(asked) ? asked : DEFAULT_LED_DENSITY;
