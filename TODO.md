@@ -11,7 +11,7 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] README: cos'è, come si avvia, come si contribuisce
 - [ ] Portare in `SPEC.md` §4ter (`docs/`)
 - [ ] Riscrivere §12.5: formula e costanti di prezzo pubbliche, calcolo nel browser
-- [ ] Togliere `.github/workflows/deploy.yml` e lo script `deploy` (gh-pages)
+- [x] Togliere `.github/workflows/deploy.yml` e lo script `deploy` (gh-pages)
 - [x] `base` in `vite.config.ts`: `/` su Cloudflare Pages, `/sign-configurator/` altrove
 
 ### Prezzo (§12.5)
@@ -53,10 +53,10 @@ I segreti (chiavi WooCommerce, secret di Turnstile, email delle richieste) stann
 di Cloudflare, mai nel repo. I nomi sono in `.dev.vars.example`.
 
 ### Infrastruttura
-- [ ] Progetto Cloudflare Pages collegato a questo repo, build `npm run build:public`, output `dist`
+- [x] Progetto Cloudflare Pages collegato a questo repo, build `npm run build:public`, output `dist`
 - [ ] Dominio
 - [ ] Variabili e segreti (`.dev.vars.example`)
-- [ ] Spegnere GitHub Pages quando Cloudflare risponde
+- [x] Spegnere GitHub Pages quando Cloudflare risponde
 
 ### `functions/api/request.ts` (Richiedi)
 - [ ] Verifica del token Turnstile

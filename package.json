@@ -12,15 +12,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "tsc --noEmit && vitest run && vite build && playwright test",
-    "test:watch": "vitest",
-    "predeploy": "npm run build:public",
-    "deploy": "gh-pages -d dist --nojekyll"
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lampados/sign-configurator.git"
   },
-  "homepage": "https://lampados.github.io/sign-configurator/",
+  "homepage": "https://sign-configurator.pages.dev/",
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "comlink": "^4.4.2",
