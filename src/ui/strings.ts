@@ -64,6 +64,12 @@ export const S = {
     box: 'Box',
     tooSmall: 'too small',
   },
+  size: {
+    letter: 'Letter height',
+    overall: (size: string) => `Whole sign: ${size}`,
+    width: (mm: number) => `width ${mm} mm`,
+    height: (mm: number) => `height ${mm} mm`,
+  },
   more: {
     editPaths: 'Edit paths',
     restorePaths: 'Restore original',
@@ -113,6 +119,7 @@ export const S = {
     text: 'Text',
     font: 'Font',
     size: 'Size',
+    letter: 'Letter height',
     color: 'Color',
     effect: 'Effect',
     diffuser: 'Diffuser',

@@ -25,6 +25,9 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] `new-part.yml`: campi prezzo, data, fonte
 
 ### Pagina cliente (v1.1)
+- [x] Ingombro dell'insegna: frecce larghezza/altezza sull'anteprima, «Size» nel riepilogo, «Letter height» nello strumento Size
+- [ ] L'insegna di partenza («Ciao» a 12 cm) nasce con «curves too tight» e l'invio bloccato: alzare la misura di partenza o attendere `HINGE_PITCH` misurato
+- [ ] Puntino della *i*: l'accesso sono due fori Ø2,5 (`DOT_WIRE_HOLE_D`), stretti per 3 fili e per la striscia da 10 mm: decidere fra fori più larghi, asola piena o puntino non illuminato
 - [ ] Taglie sotto il minimo disattivate, con il motivo
 - [ ] Alimentatore, fissaggio e bozza di approvazione nel riepilogo
 - [ ] Pannello Info: come funziona, esploso, FAQ (§12.9)

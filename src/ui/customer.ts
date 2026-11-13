@@ -144,6 +144,10 @@ app.innerHTML = `
     <div class="stage-wrap">
       <div id="stage"></div>
       <canvas id="path-editor" hidden></canvas>
+      <div class="dims" id="dims" aria-hidden="true" hidden>
+        <div class="dim dim-w"><i class="dim-line"></i><span id="dim-w"></span></div>
+        <div class="dim dim-h"><i class="dim-line"></i><span id="dim-h"></span></div>
+      </div>
       <div class="hud">
         <div class="hud-view">
           <div class="mode-switch" role="radiogroup" aria-label="${S.view.aria}">
@@ -189,12 +193,14 @@ app.innerHTML = `
           <select name="fontId" hidden>${fontOptions}</select>
         </div>
         <div class="pane" data-pane="size" hidden>
+          <p class="tech-note">${S.size.letter}</p>
           <div class="sizes">${sizeChips}</div>
           <div class="height-step">
             <button type="button" data-height-step="-10" aria-label="${S.heightStepDown}">−</button>
             <input name="heightMm" type="number" min="${HEIGHT_MIN_MM}" max="${HEIGHT_MAX_MM}" value="120" aria-label="${S.heightAria}">
             <button type="button" data-height-step="10" aria-label="${S.heightStepUp}">+</button>
           </div>
+          <p id="size-overall" class="tech-note" hidden></p>
         </div>
         <div class="pane" data-pane="color" hidden>
           <div class="swatches">${swatches}</div>
@@ -329,6 +335,43 @@ const backToText = document.querySelector<HTMLButtonElement>('#back-to-text')!;
 const fontTool = document.querySelector<HTMLButtonElement>('[data-tool="font"]')!;
 const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
 const desktop = window.matchMedia('(min-width: 900px)');
+const dims = document.querySelector<HTMLElement>('#dims')!;
+const dimW = document.querySelector<HTMLElement>('#dim-w')!;
+const dimH = document.querySelector<HTMLElement>('#dim-h')!;
+const sizeOverall = document.querySelector<HTMLElement>('#size-overall')!;
+
+/** Ingombro dell'ultima insegna generata, mm: il fondale se c'è, altrimenti la cornice. */
+let lastSize: { w: number; h: number } | null = null;
+
+function overallLabel(size: { w: number; h: number }): string {
+  return `${cmLabel(size.w).replace(' cm', '')} × ${cmLabel(size.h)}`;
+}
+
+function showSize(size: { w: number; h: number } | null): void {
+  lastSize = size;
+  dims.hidden = !size;
+  sizeOverall.hidden = !size;
+  if (!size) return;
+  dimW.textContent = S.size.width(Math.round(size.w));
+  dimH.textContent = S.size.height(Math.round(size.h));
+  sizeOverall.textContent = S.size.overall(overallLabel(size));
+}
+
+function outlineSize(outline: readonly (readonly [number, number][])[]): { w: number; h: number } | null {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const ring of outline) {
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return maxX > minX && maxY > minY ? { w: maxX - minX, h: maxY - minY } : null;
+}
 
 let svgMarkup: string | null = null;
 /** Immagine arrivata da un design salvato: la forma normalizzata dell'ordine, senza il file originale. */
@@ -517,7 +560,8 @@ function renderSummary(): void {
   }
   const mm = Number(heightInput.value);
   rows.push(
-    [t.size, Number.isFinite(mm) ? cmLabel(mm) : ''],
+    [t.size, lastSize ? overallLabel(lastSize) : '…'],
+    [t.letter, Number.isFinite(mm) ? cmLabel(mm) : ''],
     [t.color, color.value],
     [t.effect, effect?.value === 'arcobaleno' ? S.color.rainbow : S.color.fixed],
     [t.diffuser, diffuserOn() ? t.yes : t.no],
@@ -912,16 +956,19 @@ async function showSign(): Promise<void> {
   syncSourceFields();
   const heightMm = Number(heightInput.value);
   if (!(heightMm > 0)) {
+    showSize(null);
     status.textContent = S.status.needHeight;
     return;
   }
   const image = imageMode();
   const text = textInput.value.trim();
   if (!image && !text) {
+    showSize(null);
     status.textContent = S.status.needText;
     return;
   }
   if (image && !svgMarkup && !raster && !loadedSource) {
+    showSize(null);
     status.textContent = S.status.needImage;
     return;
   }
@@ -936,6 +983,7 @@ async function showSign(): Promise<void> {
     });
     if (!built) {
       if (id !== request) return;
+      showSize(null);
       status.textContent = S.status.noInk;
       return;
     }
@@ -950,6 +998,7 @@ async function showSign(): Promise<void> {
     } catch (err) {
       if (id !== request) return;
       console.warn(err);
+    showSize(null);
     status.textContent = S.status.failed;
       return;
     }
@@ -1001,6 +1050,7 @@ async function showSign(): Promise<void> {
       plateSize.hidden = true;
     }
     scene.setColor(color.value);
+    showSize(result.plate ? { w: result.plate.widthMm, h: result.plate.heightMm } : outlineSize(result.outline));
     showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
     const blocking = result.warnings.find(
@@ -1024,6 +1074,7 @@ async function showSign(): Promise<void> {
   } catch (err) {
     if (id !== request) return;
     console.warn(err);
+    showSize(null);
     status.textContent = S.status.failed;
   }
 }
@@ -1214,6 +1265,7 @@ async function loadImage(file: File): Promise<void> {
   if (file.size > IMAGE_MAX_BYTES) {
     syncSourceFields();
     showSupply(null);
+    showSize(null);
     status.textContent = S.status.fileTooBig;
     return;
   }
@@ -1226,6 +1278,7 @@ async function loadImage(file: File): Promise<void> {
   if (!isRasterFile(file)) {
     syncSourceFields();
     showSupply(null);
+    showSize(null);
     status.textContent = S.status.needImage;
     return;
   }
@@ -1246,6 +1299,7 @@ async function loadImage(file: File): Promise<void> {
     syncSourceFields();
     showSupply(null);
     console.warn(err);
+    showSize(null);
     status.textContent = S.status.failed;
   }
 }

@@ -103,6 +103,62 @@ select {
 
 .hud > * { pointer-events: auto; }
 
+/* Ingombro dell'insegna: larghezza in basso, altezza a destra (SPEC §12.2). */
+.dims {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  color: #f6f1ea;
+  font-size: 0.8rem;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
+.dim {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dim-line {
+  position: relative;
+  flex: none;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.dim-line::before,
+.dim-line::after {
+  content: '';
+  position: absolute;
+  border: 5px solid transparent;
+}
+
+.dim-w {
+  left: 14px;
+  right: 46px;
+  bottom: 54px;
+  flex-direction: column;
+}
+
+.dim-w .dim-line { width: 100%; height: 2px; }
+.dim-w .dim-line::before { left: -1px; top: -4px; border-left: 0; border-right: 9px solid currentColor; }
+.dim-w .dim-line::after { right: -1px; top: -4px; border-right: 0; border-left: 9px solid currentColor; }
+
+.dim-h {
+  right: 14px;
+  top: 78px;
+  bottom: 86px;
+  flex-direction: row-reverse;
+}
+
+.dim-h .dim-line { width: 2px; height: 100%; }
+.dim-h .dim-line::before { top: -1px; left: -4px; border-top: 0; border-bottom: 9px solid currentColor; }
+.dim-h .dim-line::after { bottom: -1px; left: -4px; border-bottom: 0; border-top: 9px solid currentColor; }
+.dim-h span { writing-mode: vertical-rl; }
+
 .hud-view {
   position: relative;
   flex: 0 0 auto;
