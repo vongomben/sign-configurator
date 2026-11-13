@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { expectClean, trackPage } from './guard';
 
-const PAGES = ['index.html', 'admin.html', 'debug.html', 'bend-test.html', 'spec.html'] as const;
+const PAGES = ['index.html', 'debug.html', 'bend-test.html', 'spec.html'] as const;
 
 for (const file of PAGES) {
   test(`${file} si apre senza errori di console o di rete`, async ({ page }) => {
@@ -10,9 +10,6 @@ for (const file of PAGES) {
 
     if (file === 'index.html') {
       await expect(page.locator('h1')).toHaveText('Neon sign configurator');
-    }
-    if (file === 'admin.html') {
-      await expect(page.locator('h1')).toHaveText('Admin');
     }
     if (file === 'spec.html') {
       await expect(page.locator('#spec h1').first()).toBeVisible();

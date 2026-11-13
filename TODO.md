@@ -31,6 +31,12 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] Miniature 2D dei font a tratto singolo
 - [ ] Un colore per spezzone
 - [ ] Trasformazioni per lettera nell'editor (§11)
+- [ ] Editor dei tracciati più visibile nella home (oggi è in More → «Edit paths»): pulsante sull'anteprima o strumento suo nella barra
+- [x] Salvare il design: salvataggio automatico nel browser, link `#o=`, file `.json`, «Start over» (strumento More)
+- [x] Tolta `admin.html`. Gli slider di taratura (intensità, alone) non ci sono più: se servono, vanno in `debug.html`
+- [ ] File di produzione (DXF dei fori, `bom.json`, ZIP): oggi non si scaricano da nessuna pagina
+- [ ] «Send order» è ancora finto: diventa vero con `functions/api/request.ts`
+- [ ] SPEC: togliere i riferimenti ad admin (§1, §5, §7, §8, §12)
 
 ### Scritture non latine (§4ter)
 - [ ] Fase 0: i quattro font in `debug.html` a 200 e 400 mm; confermare o passare al ripiego

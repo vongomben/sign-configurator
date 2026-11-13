@@ -2,6 +2,8 @@
 import './customer.css';
 import { controllerOf, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
 import { PRICING_VERSION } from '../pricing';
+import { decodeShare, encodeShare } from '../order/share';
+import type { RasterImageSource, SvgImageSource } from '../order/schema';
 import { meshToStl } from '../export/stl';
 import type { EditSegment } from '../editor/paths';
 import { scalePaths } from '../editor/paths';
@@ -22,7 +24,7 @@ import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { S, customerMessage, customerMessages } from './strings';
 import type { BomBox, BomSupply } from '../export/bom';
 import { BOXES } from '../parts/boxes';
-import { plateSvgFileName, stlFileName } from './signSlug';
+import { plateSvgFileName, signSlug, stlFileName } from './signSlug';
 import { plateToSvg } from '../export/plate';
 import {
   DEFAULT_PLATE,
@@ -37,7 +39,7 @@ import {
 import { PLATE_CORNER_R_MAX, PLATE_CORNER_R_MIN, PLATE_MARGIN_MAX, PLATE_MARGIN_MIN } from '../config';
 import { SIZES } from './sizes';
 import { PLUGS, plugOf } from './plugs';
-import { DEFAULT_LED_DENSITY, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, controllerOptions, boxOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
+import { DEFAULT_LED_DENSITY, LED_DENSITIES, EDGE_PROFILES, TECH_FIELDS, TECH_GROUPS, ledDensityOptions, voltageOptions, controllerOptions, boxOptions, techFieldInvalid, techParams, type TechNumericKey } from './techParams';
 import { mountSignScene, type PreviewMode } from '../viewer/scene';
 import { createGenerator } from '../worker/api';
 
@@ -259,6 +261,14 @@ app.innerHTML = `
             <button type="button" id="restore-paths" disabled>${S.more.restorePaths}</button>
           </div>
           <div id="path-toolbar" hidden></div>
+          <div class="actions design-actions">
+            <button type="button" id="share-design" disabled>${S.more.share}</button>
+            <button type="button" id="download-design" disabled>${S.more.downloadDesign}</button>
+            <button type="button" id="load-design">${S.more.loadDesign}</button>
+            <button type="button" id="new-design">${S.more.startOver}</button>
+            <input type="file" id="design-file" accept=".json,application/json" hidden>
+          </div>
+          <p id="design-note" class="tech-note" role="status" hidden></p>
         </div>
         <div class="pane" data-pane="request" hidden>
           <dl id="summary"></dl>
@@ -321,6 +331,10 @@ const color = document.querySelector<HTMLInputElement>('input[name="color"]')!;
 const desktop = window.matchMedia('(min-width: 900px)');
 
 let svgMarkup: string | null = null;
+/** Immagine arrivata da un design salvato: la forma normalizzata dell'ordine, senza il file originale. */
+let loadedSource: SvgImageSource | RasterImageSource | null = null;
+/** L'ultimo ordine generato: è quello che si salva e si condivide (SPEC §12.6). */
+let lastOrder: SignOrderV4 | null = null;
 let svgName = 'immagine.svg';
 let lastTool = 'text';
 let blockReason = '';
@@ -907,7 +921,7 @@ async function showSign(): Promise<void> {
     status.textContent = S.status.needText;
     return;
   }
-  if (image && !svgMarkup && !raster) {
+  if (image && !svgMarkup && !raster && !loadedSource) {
     status.textContent = S.status.needImage;
     return;
   }
@@ -939,6 +953,8 @@ async function showSign(): Promise<void> {
     status.textContent = S.status.failed;
       return;
     }
+  } else if (image && loadedSource) {
+    order = customerOrder(loadedSource);
   } else {
     order = customerOrder({ kind: 'text', text, fontId: fontInput.value });
   }
@@ -949,6 +965,7 @@ async function showSign(): Promise<void> {
     const result = await generator.generate(order);
     if (id !== request || epoch !== editEpoch) return;
     if (!edited) sourceSegments = result.segments;
+    rememberDesign(order);
     if (downloadButton && result.housingMesh) {
       readyStl = {
         housing: meshToStl(result.housingMesh, 'housing'),
@@ -1193,6 +1210,7 @@ function isRasterFile(file: File): boolean {
 async function loadImage(file: File): Promise<void> {
   svgMarkup = null;
   raster = null;
+  loadedSource = null;
   if (file.size > IMAGE_MAX_BYTES) {
     syncSourceFields();
     showSupply(null);
@@ -1312,6 +1330,242 @@ async function openEditor(): Promise<void> {
   } finally {
     editButton.disabled = sourceSegments.length === 0 && !edited;
   }
+}
+
+// --- Salvare, condividere e riaprire un design (SPEC §12.6) ---
+
+const DESIGN_KEY = 'sign-configurator:design:v1';
+/** Oltre questa misura il design non si salva nel browser: resta il file. */
+const DESIGN_STORE_MAX = 1_500_000;
+const shareButton = document.querySelector<HTMLButtonElement>('#share-design')!;
+const downloadDesignButton = document.querySelector<HTMLButtonElement>('#download-design')!;
+const loadDesignButton = document.querySelector<HTMLButtonElement>('#load-design')!;
+const newDesignButton = document.querySelector<HTMLButtonElement>('#new-design')!;
+const designFile = document.querySelector<HTMLInputElement>('#design-file')!;
+const designNote = document.querySelector<HTMLElement>('#design-note')!;
+
+function noteDesign(message: string): void {
+  designNote.hidden = message === '';
+  designNote.textContent = message;
+}
+
+/** Dopo ogni generazione riuscita: l'ordine resta nel browser, così un ricaricamento non lo perde. */
+function rememberDesign(order: SignOrderV4): void {
+  lastOrder = order;
+  shareButton.disabled = false;
+  downloadDesignButton.disabled = false;
+  try {
+    const { json } = encodeShare(order);
+    if (json && json.length <= DESIGN_STORE_MAX) window.localStorage.setItem(DESIGN_KEY, json);
+    else window.localStorage.removeItem(DESIGN_KEY);
+  } catch {
+    // Archivio pieno o bloccato: il design si salva comunque con il link o con il file.
+  }
+}
+
+function storedDesign(): string | null {
+  try {
+    return window.localStorage.getItem(DESIGN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function checkRadio(name: string, value: string): boolean {
+  const input = document.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`);
+  if (!input) return false;
+  input.checked = true;
+  return true;
+}
+
+function setSelect(select: HTMLSelectElement, value: string, fallback: string): void {
+  select.value = value;
+  if (select.selectedIndex < 0) select.value = fallback;
+}
+
+/** Porta un ordine nei controlli della pagina. La generazione la chiede chi chiama. */
+function applyOrder(order: SignOrderV4): void {
+  window.clearTimeout(timer);
+  editor?.close();
+  editor = null;
+  liveBlocked = false;
+  svgMarkup = null;
+  raster = null;
+  loadedSource = null;
+  imageInput.value = '';
+  const source = order.source;
+  if (source.kind === 'text') {
+    textInput.value = source.text;
+    setSelect(fontInput, source.fontId, fontInput.value);
+    checkRadio('sourceKind', 'text');
+  } else {
+    loadedSource = source;
+    svgName = source.name;
+    setSelect(traceInput, source.trace, traceInput.value);
+    checkRadio('sourceKind', 'image');
+  }
+  heightInput.value = String(order.heightMm);
+  heightAtEdit = order.heightMm;
+  syncSizeChips();
+  color.value = order.color;
+  applyNeon(color.value);
+  scene.setColor(color.value);
+
+  const params = order.params;
+  const wall = typeof params.WALL === 'number' ? params.WALL : DEFAULT_PARAMS.WALL;
+  wallInput.value = Math.min(WALL_MAX_MM, Math.max(WALL_MIN_MM, wall)).toFixed(1);
+  for (const field of TECH_FIELDS) {
+    const input = techNumberInputs.get(field.key)!;
+    input.value = String(params[field.key] ?? DEFAULT_PARAMS[field.key]);
+    input.setAttribute('aria-invalid', techFieldInvalid(field, input.value) ? 'true' : 'false');
+  }
+  lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+  setSelect(techProfileInput, params.EDGE_PROFILE ?? DEFAULT_PARAMS.EDGE_PROFILE, DEFAULT_PARAMS.EDGE_PROFILE);
+  const density = params.LED_PER_M ?? DEFAULT_PARAMS.LED_PER_M;
+  techDensityInput.value = String(LED_DENSITIES.includes(density) ? density : DEFAULT_LED_DENSITY);
+  setSelect(techVoltageInput, String(params.STRIP_V ?? DEFAULT_PARAMS.STRIP_V), String(DEFAULT_PARAMS.STRIP_V));
+  setSelect(techControllerInput, params.CONTROLLER_ID ?? DEFAULT_PARAMS.CONTROLLER_ID, DEFAULT_PARAMS.CONTROLLER_ID);
+  setSelect(techBoxInput, params.BOX_ID ?? DEFAULT_PARAMS.BOX_ID, DEFAULT_PARAMS.BOX_ID);
+
+  const rainbow = order.customer.effect === 'arcobaleno';
+  checkRadio('effect', rainbow ? 'arcobaleno' : 'fisso');
+  scene.setEffect(rainbow ? 'arcobaleno' : 'fisso');
+  checkRadio('diffuser', order.customer.diffuser ? 'on' : 'off');
+  previewDiffuser = order.customer.diffuser;
+  scene.setMode(previewDiffuser ? (litOn() ? 'accesa' : 'spenta') : 'senza diffusore');
+  setSelect(plugInput, order.customer.plug, PLUGS[0]!.value);
+  syncPlug();
+
+  if (order.plate && checkRadio('plateMaterial', order.plate.material)) {
+    checkRadio('plateShape', order.plate.shape);
+    plateMarginInput.value = String(clampMargin(order.plate.marginMm));
+    plateCornerInput.value = String(clampCornerR(order.plate.cornerRMm));
+  } else {
+    checkRadio('plateMaterial', 'none');
+  }
+  syncPlateFields();
+
+  edited = order.paths ? { paths: order.paths, crossings: order.crossings } : null;
+  restoreButton.disabled = !edited;
+  sourceSegments = [];
+  rememberSource();
+  syncSourceFields();
+  syncFontSamples();
+  updateSubmit();
+}
+
+/** Colore, effetto e spina non rigenerano l'insegna: il design salvato li segue lo stesso. */
+let refreshTimer = 0;
+function refreshDesign(): void {
+  window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(() => {
+    if (!lastOrder) return;
+    rememberDesign({
+      ...lastOrder,
+      color: color.value,
+      customer: { ...lastOrder.customer, effect: effectOf(), plug: plugOf(plugInput.value).value },
+    });
+  }, 400);
+}
+color.addEventListener('input', refreshDesign);
+plugInput.addEventListener('change', refreshDesign);
+for (const input of document.querySelectorAll<HTMLInputElement>('input[name="effect"]')) {
+  input.addEventListener('change', refreshDesign);
+}
+
+/** Link, URL o JSON del file → pagina. `false` se non è un design leggibile. */
+function openDesign(input: string): boolean {
+  const read = decodeShare(input);
+  if (!read.order) return false;
+  applyOrder(read.order);
+  noteDesign(read.warnings.length > 0 ? S.more.adjusted : '');
+  return true;
+}
+
+/** Il design aperto da un link vive poi nel browser: senza l'hash, un ricaricamento non torna indietro. */
+function dropHash(): void {
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+function designUrl(hash: string): string {
+  return `${window.location.origin}${window.location.pathname}${hash}`;
+}
+
+shareButton.addEventListener('click', () => {
+  if (!lastOrder) return;
+  const link = encodeShare(lastOrder);
+  if (!link.hash) {
+    delete designNote.dataset.link;
+    noteDesign(S.more.tooBig);
+    return;
+  }
+  const url = designUrl(link.hash);
+  designNote.dataset.link = url;
+  void (async () => {
+    try {
+      if (!isDesktop() && typeof navigator.share === 'function') {
+        await navigator.share({ title: document.title, url });
+        noteDesign('');
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      noteDesign(S.more.copied);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      window.prompt(S.more.copyPrompt, url);
+    }
+  })();
+});
+downloadDesignButton.addEventListener('click', () => {
+  if (!lastOrder) return;
+  const { json } = encodeShare(lastOrder);
+  if (!json) return;
+  saveStl(`${signSlug(fileLabel())}-design.json`, json, 'application/json');
+});
+loadDesignButton.addEventListener('click', () => designFile.click());
+designFile.addEventListener('change', () => {
+  const file = designFile.files?.[0];
+  designFile.value = '';
+  if (!file) return;
+  void (async () => {
+    if (edited && !window.confirm(S.more.replace)) return;
+    if (!openDesign(await file.text())) {
+      noteDesign(S.more.badFile);
+      return;
+    }
+    invalidateStl();
+    void showSign();
+  })();
+});
+newDesignButton.addEventListener('click', () => {
+  if (!window.confirm(S.more.startOverConfirm)) return;
+  try {
+    window.localStorage.removeItem(DESIGN_KEY);
+  } catch {
+    // Niente da togliere.
+  }
+  dropHash();
+  window.location.reload();
+});
+window.addEventListener('hashchange', () => {
+  if (!window.location.hash.startsWith('#o=')) return;
+  const ok = openDesign(window.location.hash);
+  dropHash();
+  if (!ok) {
+    noteDesign(S.more.badLink);
+    return;
+  }
+  invalidateStl();
+  void showSign();
+});
+
+// All'apertura: prima il link, poi l'ultimo design rimasto nel browser.
+if (window.location.hash.startsWith('#o=')) {
+  if (!openDesign(window.location.hash)) noteDesign(S.more.badLink);
+  dropHash();
+} else {
+  const stored = storedDesign();
+  if (stored) openDesign(stored);
 }
 
 void (async () => {

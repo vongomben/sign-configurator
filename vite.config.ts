@@ -3,13 +3,12 @@ import { defineConfig } from 'vitest/config';
 
 const root = import.meta.dirname;
 
-// `vite build --mode public` (npm run build:public): la pagina cliente e la pagina parts. Admin, debug, bend test
+// `vite build --mode public` (npm run build:public): la pagina cliente e la pagina parts. Debug, bend test
 // e spec si usano in locale (SPEC §7).
 const PUBLIC_PAGES = ['index', 'parts'];
 const ALL_PAGES: Record<string, string> = {
   index: 'index.html',
   parts: 'parts.html',
-  admin: 'admin.html',
   debug: 'debug.html',
   bendTest: 'bend-test.html',
   spec: 'spec.html',
