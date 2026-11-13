@@ -1,0 +1,6 @@
+# Copia in .dev.vars (ignorato da git). In produzione: variabili di Cloudflare Pages.
+TURNSTILE_SECRET=
+WOO_BASE_URL=https://esempio.it
+WOO_CONSUMER_KEY=
+WOO_CONSUMER_SECRET=
+REQUEST_EMAIL=

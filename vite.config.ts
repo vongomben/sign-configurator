@@ -16,8 +16,9 @@ const ALL_PAGES: Record<string, string> = {
 };
 
 export default defineConfig(({ command, isPreview, mode }) => ({
-  // GitHub Pages serve il sito da https://vongomben.github.io/sign-configurator/
-  base: command === 'build' || isPreview ? '/sign-configurator/' : '/',
+  // Cloudflare Pages (CF_PAGES=1 durante il build) serve dalla radice; GitHub Pages da
+  // https://lampados.github.io/sign-configurator/
+  base: (command === 'build' || isPreview) && !process.env.CF_PAGES ? '/sign-configurator/' : '/',
   appType: 'mpa',
   build: {
     target: 'es2022',
