@@ -18,10 +18,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vongomben/sign-configurator.git"
+    "url": "git+https://github.com/lampados/sign-configurator.git"
   },
-  "homepage": "https://vongomben.github.io/sign-configurator/",
-  "license": "ISC",
+  "homepage": "https://lampados.github.io/sign-configurator/",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "comlink": "^4.4.2",
     "d3-delaunay": "^6.0.4",
