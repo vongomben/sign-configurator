@@ -28,6 +28,22 @@ function order(text: string, params: SignOrderV4['params'] = {}): SignOrderV4 {
   };
 }
 
+/** Quante linee centrali attraversa la retta verticale x = costante. */
+function channelsAt(centerlines: readonly { points: [number, number][] }[], x: number): number {
+  let n = 0;
+  for (const line of centerlines) {
+    for (let i = 0; i < line.points.length - 1; i++) {
+      const a = line.points[i]!;
+      const b = line.points[i + 1]!;
+      if ((a[0] - x) * (b[0] - x) > 0) continue;
+      if (a[0] === x && b[0] === x) continue;
+      if (b[0] === x && i < line.points.length - 2) continue;
+      n++;
+    }
+  }
+  return n;
+}
+
 function xExtent(mesh: MeshData): { min: number; max: number } {
   let min = Infinity;
   let max = -Infinity;
@@ -80,8 +96,13 @@ describe('insegna divisa per il piatto di stampa', () => {
     expect(sum).toBeLessThan(whole);
     expect(sum).toBeGreaterThan(whole * 0.995);
     expect(2 * SPLIT_CLEARANCE).toBeLessThan(0.5);
-    // I tagli non passano su asole, tasche o fori.
-    expect(result.warnings.join('\n')).not.toMatch(/un taglio passa/);
+    // Il taglio cade dove la striscia è già interrotta: al massimo un giunto attraversa un canale,
+    // e l'avviso lo dice. Prima della taratura dei costi li attraversavano tutti e due.
+    const onChannel = split!.cutsX.filter((x) => channelsAt(result.centerlines, x) > 0).length;
+    expect(onChannel).toBeLessThanOrEqual(1);
+    const notice = result.warnings.filter((w) => w.startsWith('Suddivisione per il piatto:'));
+    expect(notice).toHaveLength(onChannel > 0 ? 1 : 0);
+    if (onChannel > 0) expect(notice[0]).toMatch(/canale acceso/);
   }, 120_000);
 
   it('con un piatto più grande torna in un pezzo; il risultato è deterministico', async () => {

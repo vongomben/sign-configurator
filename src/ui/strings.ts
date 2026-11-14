@@ -129,6 +129,8 @@ export const S = {
     print: 'Printing',
     printOne: 'One piece',
     printParts: (parts: number, bedW: number, bedH: number) => `${parts} parts for a ${bedW} × ${bedH} mm bed`,
+    /** Un giunto cade su un canale: lì la striscia va tagliata e risaldata. */
+    printJoins: (joins: number) => `${joins} join${joins === 1 ? '' : 's'} across a lit channel`,
     color: 'Color',
     effect: 'Effect',
     diffuser: 'Diffuser',

@@ -62,6 +62,8 @@ export interface GenerateResult {
 export interface SplitResult {
   /** Ascisse dei tagli verticali, crescenti, mm. */
   cutsX: number[];
+  /** Giunti che attraversano un canale acceso: lì la striscia va interrotta e risaldata. */
+  onChannel: number;
   minY: number;
   maxY: number;
   /** Un pezzo per elemento, da sinistra a destra. */
@@ -247,10 +249,12 @@ export async function generateSign(order: AnyOrder, read?: FontBytesReader): Pro
       outline: housing.outline,
       centerlines: strip.chains.map((chain) => (chain.smooth.length >= 2 ? chain.smooth : chain.points)),
       keepOut: [
-        ...housing.holes.wireSlots.map((slot) => xRange(slot.points)),
-        ...housing.holes.cornerPockets.map((pocket) => xRange(pocket.points)),
+        // Asole e tasche: lì lo spezzone già finisce, il taglio ci passa quasi senza danno.
+        ...housing.holes.wireSlots.map((slot) => ({ ...xRange(slot.points), kind: 'slot' as const })),
+        ...housing.holes.cornerPockets.map((pocket) => ({ ...xRange(pocket.points), kind: 'slot' as const })),
+        // Fori: tagliarli a metà li rovina, ma bastano pochi millimetri per schivarli.
         ...[...housing.holes.anchors, ...(housing.holes.cable ? [housing.holes.cable] : []), ...housing.holes.dotWires].map(
-          (hole) => ({ x0: hole.x - hole.d / 2, x1: hole.x + hole.d / 2 }),
+          (hole) => ({ x0: hole.x - hole.d / 2, x1: hole.x + hole.d / 2, kind: 'hole' as const }),
         ),
       ],
       bedW: params.BED_W,
@@ -261,6 +265,7 @@ export async function generateSign(order: AnyOrder, read?: FontBytesReader): Pro
     if (plan.cutsX.length > 0) {
       split = {
         cutsX: plan.cutsX,
+        onChannel: plan.onChannel,
         minY: plan.bounds.minY,
         maxY: plan.bounds.maxY,
         housing: cutSolid(housing.solid, plan.pieces),

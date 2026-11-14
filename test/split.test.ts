@@ -34,16 +34,71 @@ describe('suddivisione per il piatto di stampa', () => {
     for (const piece of plan.pieces) expect(Math.abs(piece.x1 - piece.x0 - 700 / 3)).toBeLessThan(1);
   });
 
-  it('il taglio evita asole e fori', () => {
+  it('il taglio schiva i fori', () => {
     const base = { outline: [rect(0, 0, 400, 120)], centerlines: [], bedW: 300, bedH: 300 };
     const free = planSplit({ ...base, keepOut: [] });
     expect(free.cutsX).toHaveLength(1);
     expect(Math.abs(free.cutsX[0]! - 200)).toBeLessThan(1);
-    const blocked = planSplit({ ...base, keepOut: [{ x0: 190, x1: 210 }] });
-    expect(blocked.cutsX).toHaveLength(1);
-    const x = blocked.cutsX[0]!;
-    expect(x < 186 || x > 214).toBe(true);
-    expect(blocked.warnings).toEqual([]);
+    // Un foro si schiva uscendo dal suo ingombro.
+    const hole = planSplit({ ...base, keepOut: [{ x0: 190, x1: 210, kind: 'hole' }] });
+    expect(hole.cutsX).toHaveLength(1);
+    const x = hole.cutsX[0]!;
+    expect(x < 189 || x > 211).toBe(true);
+    expect(hole.warnings).toEqual([]);
+  });
+
+  it('un varco senza canali batte un taglio in mezzo a una lettera, anche con un\'asola dentro', () => {
+    // Un canale continuo da 0 a 400, interrotto solo fra 195 e 205: lì c'è l'asola.
+    const centerlines: SplitPoint[][] = [
+      [
+        [0, 60],
+        [195, 60],
+      ],
+      [
+        [205, 60],
+        [400, 60],
+      ],
+    ];
+    const plan = planSplit({
+      outline: [rect(0, 0, 400, 120)],
+      centerlines,
+      keepOut: [{ x0: 195, x1: 205, kind: 'slot' }],
+      bedW: 300,
+      bedH: 300,
+    });
+    expect(plan.cutsX).toHaveLength(1);
+    expect(plan.cutsX[0]!).toBeGreaterThan(195);
+    expect(plan.cutsX[0]!).toBeLessThan(205);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  it('un pezzo in più si accetta se evita di tagliare un canale', () => {
+    // Varchi senza canali a 200, 400 e 600. Con due soli tagli (il minimo per 800 mm) almeno uno
+    // cadrebbe dentro una lettera; con tre cadono tutti nei varchi.
+    const centerlines: SplitPoint[][] = [
+      [
+        [0, 60],
+        [198, 60],
+      ],
+      [
+        [202, 60],
+        [398, 60],
+      ],
+      [
+        [402, 60],
+        [598, 60],
+      ],
+      [
+        [602, 60],
+        [800, 60],
+      ],
+    ];
+    const plan = planSplit({ outline: [rect(0, 0, 800, 120)], centerlines, keepOut: [], bedW: 300, bedH: 300 });
+    expect(plan.cutsX).toHaveLength(3);
+    for (const target of [200, 400, 600]) {
+      expect(plan.cutsX.some((x) => Math.abs(x - target) < 2)).toBe(true);
+    }
+    expect(plan.warnings).toEqual([]);
   });
 
   it('il taglio passa dove attraversa meno canali', () => {

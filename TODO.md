@@ -56,6 +56,7 @@ Una voce si spunta quando `npm run check` passa.
 ### Geometria e produzione
 - [x] Suddivisione per il piatto di stampa: tagli verticali automatici, piatto 300 × 300 modificabile in Tech, cornice e diffusore, ZIP con tutti i pezzi, tagli tratteggiati sull'anteprima
 - [ ] Suddivisione: scrivere la sezione nella SPEC (§14) e togliere la voce da «Fuori scope» (§9)
+- [x] Suddivisione: tarati i costi. Attraversare un canale acceso è ora la cosa più cara (40), un'asola o una tasca quasi gratis (2), un foro si schiva di 2 mm. Un pezzo in più si accetta se evita un giunto da saldare. Il riepilogo dice quanti giunti cadono su un canale
 - [ ] Suddivisione: tagli orizzontali per insegne più alte del piatto (oggi solo un avviso)
 - [ ] Suddivisione: tagli spostabili a mano sull'anteprima
 - [ ] Suddivisione: spine di allineamento o incastri, per chi non usa il fondale

@@ -349,6 +349,8 @@ const sizeOverall = document.querySelector<HTMLElement>('#size-overall')!;
 let lastSize: { w: number; h: number } | null = null;
 /** In quanti pezzi si stampa l'ultima insegna generata (SPEC §14). 1: intera. */
 let lastParts = 1;
+/** Giunti che cadono su un canale acceso: lì la striscia va interrotta e risaldata. */
+let lastJoins = 0;
 
 function overallLabel(size: { w: number; h: number }): string {
   return `${cmLabel(size.w).replace(' cm', '')} × ${cmLabel(size.h)}`;
@@ -570,7 +572,15 @@ function renderSummary(): void {
   rows.push(
     [t.size, lastSize ? overallLabel(lastSize) : '…'],
     [t.letter, Number.isFinite(mm) ? cmLabel(mm) : ''],
-    [t.print, lastParts > 1 ? t.printParts(lastParts, resolveParams(orderParams()).BED_W, resolveParams(orderParams()).BED_H) : t.printOne],
+    [
+      t.print,
+      lastParts > 1
+        ? [
+            t.printParts(lastParts, resolveParams(orderParams()).BED_W, resolveParams(orderParams()).BED_H),
+            ...(lastJoins > 0 ? [t.printJoins(lastJoins)] : []),
+          ].join(' · ')
+        : t.printOne,
+    ],
     [t.color, color.value],
     [t.effect, effect?.value === 'arcobaleno' ? S.color.rainbow : S.color.fixed],
     [t.diffuser, diffuserOn() ? t.yes : t.no],
@@ -1097,6 +1107,7 @@ async function showSign(): Promise<void> {
     }
     scene.setColor(color.value);
     lastParts = result.split ? result.split.housing.length : 1;
+    lastJoins = result.split ? result.split.onChannel : 0;
     showSize(result.plate ? { w: result.plate.widthMm, h: result.plate.heightMm } : outlineSize(result.outline));
     showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
