@@ -172,46 +172,11 @@ select {
   font-size: 0.78rem;
 }
 
-.wall-field {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: none;
-  align-self: flex-start;
-  min-height: 42px;
-  margin-inline: auto;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(18, 16, 14, 0.78);
-  color: #f6f1ea;
-  font-size: 0.82rem;
-  white-space: nowrap;
-}
-
-.wall-field input {
-  width: 4.4rem;
-  min-height: 32px;
-  border: 0;
-  border-radius: 999px;
-  background: #000;
-  color: inherit;
-  text-align: center;
-}
-
 @media (max-width: 480px) {
   .hud { gap: 6px; }
   .mode-switch { font-size: 0.82rem; }
   .mode-switch label { padding: 0 8px; }
   .diffuser-switch { font-size: 0.72rem; }
-  .wall-field {
-    flex-direction: column;
-    gap: 1px;
-    min-height: 0;
-    padding: 4px 8px;
-    font-size: 0.68rem;
-  }
-  .wall-field input { width: 3.2rem; min-height: 28px; }
   #open-request { min-height: 40px; padding: 0 12px; font-size: 0.85rem; }
 }
 
@@ -871,18 +836,9 @@ input[type="color"] {
   border-top: 1px solid var(--line);
 }
 
-/* Con la barra a destra l'anteprima è più stretta: sotto i 900 px la cornice scende sotto il diffusore. */
+/* Con la barra a destra l'anteprima è più stretta. */
 @media (max-width: 899px) {
   .hud { flex-wrap: nowrap; }
-
-  .wall-field {
-    position: absolute;
-    top: calc(100% + 54px);
-    left: 0;
-    flex-direction: row;
-    min-height: 36px;
-    margin: 0;
-  }
 
   #open-request { margin-left: auto; }
 }

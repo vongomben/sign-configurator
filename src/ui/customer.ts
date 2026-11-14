@@ -24,7 +24,8 @@ import { IMAGE_MAX_BYTES, importSvg } from '../sources/svgImport';
 import { S, customerMessage, customerMessages } from './strings';
 import type { BomBox, BomSupply } from '../export/bom';
 import { BOXES } from '../parts/boxes';
-import { plateSvgFileName, signSlug, stlFileName } from './signSlug';
+import { partFileName, plateSvgFileName, signSlug, stlFileName, zipFileName } from './signSlug';
+import { zipStore, type ZipEntry } from '../export/zip';
 import { plateToSvg } from '../export/plate';
 import {
   DEFAULT_PLATE,
@@ -125,6 +126,14 @@ const techGroups = TECH_GROUPS.map((group) => `
         ${boxOptions().map((o) => `<option value="${o.value}"${o.isDefault ? ' selected' : ''}>${o.label}</option>`).join('')}
       </select>
     </label>` : ''}
+    ${group.id === 'channel' ? `
+    <label class="tech-field">
+      <span>${S.frame.label} <small>WALL</small></span>
+      <span class="tech-input">
+        <input name="wallMm" type="number" inputmode="decimal" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}">
+        <span>mm</span>
+      </span>
+    </label>` : ''}
     ${group.id === 'edges' ? `
     <label class="tech-field">
       <span>${S.tech.profile} <small>EDGE_PROFILE</small></span>
@@ -159,10 +168,6 @@ app.innerHTML = `
             <label><input type="radio" name="diffuser" value="off"><span>${S.diffuser.off}</span></label>
           </div>
         </div>
-        <label class="wall-field">
-          <span>${S.frame.label}</span>
-          <input name="wallMm" type="number" min="${WALL_MIN_MM}" max="${WALL_MAX_MM}" step="0.1" value="${DEFAULT_PARAMS.WALL}" aria-label="${S.frame.aria}">
-        </label>
         <button type="button" id="open-request" aria-pressed="false">${S.request}</button>
       </div>
       <div class="stage-meta">
@@ -342,6 +347,8 @@ const sizeOverall = document.querySelector<HTMLElement>('#size-overall')!;
 
 /** Ingombro dell'ultima insegna generata, mm: il fondale se c'è, altrimenti la cornice. */
 let lastSize: { w: number; h: number } | null = null;
+/** In quanti pezzi si stampa l'ultima insegna generata (SPEC §14). 1: intera. */
+let lastParts = 1;
 
 function overallLabel(size: { w: number; h: number }): string {
   return `${cmLabel(size.w).replace(' cm', '')} × ${cmLabel(size.h)}`;
@@ -354,7 +361,8 @@ function showSize(size: { w: number; h: number } | null): void {
   if (!size) return;
   dimW.textContent = S.size.width(Math.round(size.w));
   dimH.textContent = S.size.height(Math.round(size.h));
-  sizeOverall.textContent = S.size.overall(overallLabel(size));
+  sizeOverall.textContent =
+    lastParts > 1 ? `${S.size.overall(overallLabel(size))} · ${S.size.parts(lastParts)}` : S.size.overall(overallLabel(size));
 }
 
 function outlineSize(outline: readonly (readonly [number, number][])[]): { w: number; h: number } | null {
@@ -562,6 +570,7 @@ function renderSummary(): void {
   rows.push(
     [t.size, lastSize ? overallLabel(lastSize) : '…'],
     [t.letter, Number.isFinite(mm) ? cmLabel(mm) : ''],
+    [t.print, lastParts > 1 ? t.printParts(lastParts, resolveParams(orderParams()).BED_W, resolveParams(orderParams()).BED_H) : t.printOne],
     [t.color, color.value],
     [t.effect, effect?.value === 'arcobaleno' ? S.color.rainbow : S.color.fixed],
     [t.diffuser, diffuserOn() ? t.yes : t.no],
@@ -850,6 +859,8 @@ interface ReadyStl {
   diffuserOn: boolean;
   /** Fondale: STL della lastra e SVG di taglio laser. */
   plate: { stl: ArrayBuffer; svg: string } | null;
+  /** Pezzi per il piatto di stampa (SPEC §14). null: un pezzo solo. */
+  parts: { housing: ArrayBuffer[]; diffuser: ArrayBuffer[] } | null;
 }
 
 let readyStl: ReadyStl | null = null;
@@ -939,6 +950,26 @@ function fileLabel(): string {
 downloadButton?.addEventListener('click', () => {
   const ready = readyStl;
   if (!ready || downloadButton?.disabled) return;
+  if (ready.parts) {
+    // Insegna divisa per il piatto: tutti i file in un solo archivio.
+    const count = ready.parts.housing.length;
+    const files: ZipEntry[] = ready.parts.housing.map((data, i) => ({
+      name: partFileName(ready.label, ready.heightMm, 'housing', i + 1, count),
+      data,
+    }));
+    if (ready.diffuserOn) {
+      ready.parts.diffuser.forEach((data, i) => {
+        files.push({ name: partFileName(ready.label, ready.heightMm, 'diffuser', i + 1, count), data });
+      });
+    }
+    if (ready.plate) {
+      files.push({ name: stlFileName(ready.label, ready.heightMm, 'fondale'), data: ready.plate.stl });
+      files.push({ name: plateSvgFileName(ready.label, ready.heightMm), data: ready.plate.svg });
+    }
+    const zip = zipStore(files);
+    saveStl(zipFileName(ready.label, ready.heightMm), zip.buffer as ArrayBuffer, 'application/zip');
+    return;
+  }
   saveStl(stlFileName(ready.label, ready.heightMm, 'housing'), ready.housing);
   if (ready.diffuserOn) saveStl(stlFileName(ready.label, ready.heightMm, 'diffuser'), ready.diffuser);
   if (ready.plate) {
@@ -1026,9 +1057,16 @@ async function showSign(): Promise<void> {
           result.plate && result.plateMesh
             ? { stl: meshToStl(result.plateMesh, 'fondale'), svg: plateToSvg(result.plate) }
             : null,
+        parts: result.split
+          ? {
+              housing: result.split.housing.map((mesh) => meshToStl(mesh, 'housing')),
+              diffuser: result.split.diffuser.map((mesh) => meshToStl(mesh, 'diffuser')),
+            }
+          : null,
       };
       downloadButton.disabled = false;
-      downloadButton.textContent = S.order.download;
+      downloadButton.textContent = result.split ? S.order.downloadParts(result.split.housing.length) : S.order.download;
+      downloadButton.dataset.parts = String(result.split ? result.split.housing.length : 1);
       downloadButton.dataset.ready = stlFileName(label, heightMm, 'housing');
     }
     editButton.disabled = sourceSegments.length === 0 && !edited;
@@ -1038,6 +1076,14 @@ async function showSign(): Promise<void> {
       lights: result.lightPoints,
       ledGapMm: result.ledGapMm,
       plate: result.plate && result.plateMesh ? { mesh: result.plateMesh, material: result.plate.choice.material } : null,
+      cuts: result.split
+        ? result.split.cutsX.map((x) => ({
+            x,
+            y0: result.split!.minY - 8,
+            y1: result.split!.maxY + 8,
+            z: resolveParams(order.params).FLOOR + resolveParams(order.params).CHANNEL_DEPTH + 1,
+          }))
+        : [],
     });
     if (result.plate) {
       plateSize.hidden = false;
@@ -1050,6 +1096,7 @@ async function showSign(): Promise<void> {
       plateSize.hidden = true;
     }
     scene.setColor(color.value);
+    lastParts = result.split ? result.split.housing.length : 1;
     showSize(result.plate ? { w: result.plate.widthMm, h: result.plate.heightMm } : outlineSize(result.outline));
     showSupply(result.bom);
     status.dataset.generation = String(Number(status.dataset.generation ?? '0') + 1);
@@ -1225,6 +1272,7 @@ plateCornerInput.addEventListener('change', () => {
 syncPlateFields();
 techReset.addEventListener('click', () => {
   for (const field of TECH_FIELDS) techNumberInputs.get(field.key)!.value = String(DEFAULT_PARAMS[field.key]);
+  wallInput.value = String(DEFAULT_PARAMS.WALL);
   techProfileInput.value = DEFAULT_PARAMS.EDGE_PROFILE;
   techDensityInput.value = String(DEFAULT_LED_DENSITY);
   techVoltageInput.value = String(DEFAULT_PARAMS.STRIP_V);

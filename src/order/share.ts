@@ -96,6 +96,8 @@ const NUMERIC_PARAMS = [
   'DOT_WIRE_HOLE_D',
   'DOT_OVERHANG_MM',
   'COVERAGE_MIN',
+  'BED_W',
+  'BED_H',
 ] as const satisfies readonly (keyof Params)[];
 
 const KNOWN_ROOT = new Set([

@@ -24,10 +24,14 @@ test('index: Scarica STL di Ciao Torino, housing e diffusore', async ({ page }) 
   const track = trackPage(page);
   await page.goto('index.html', { waitUntil: 'load' });
   const button = page.locator('#download-stl');
+  // Piatto largo: «Ciao Torino» resta in un pezzo (la suddivisione ha il suo test, split.spec.ts).
+  await page.locator('[data-tool="tech"]').click();
+  await page.locator('input[name="tech-BED_W"]').fill('1000');
   await page.locator('[data-tool="text"]').click();
   await page.locator('input[name="text"]').fill('Ciao Torino');
   await page.locator('#open-request').click();
   await expect(button).toHaveAttribute('data-ready', 'ciao-torino-120mm-housing.stl');
+  await expect(button).toHaveAttribute('data-parts', '1');
   await expect(button).toBeEnabled();
   await expect(button).toHaveText('Download STL');
   await inViewport(page, '#download-stl');

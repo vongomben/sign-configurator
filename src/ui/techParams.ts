@@ -18,7 +18,9 @@ export type TechNumericKey =
   | 'SLOT_LIP_CHAMFER'
   | 'CHAMFER_SIZE'
   | 'CHAMFER_ANGLE'
-  | 'LAYER_STEP';
+  | 'LAYER_STEP'
+  | 'BED_W'
+  | 'BED_H';
 
 export interface TechField {
   key: TechNumericKey;
@@ -30,7 +32,7 @@ export interface TechField {
 }
 
 export interface TechGroup {
-  id: 'strip' | 'channel' | 'wires' | 'edges';
+  id: 'strip' | 'channel' | 'wires' | 'edges' | 'bed';
   title: string;
   fields: readonly TechField[];
 }
@@ -71,6 +73,14 @@ export const TECH_GROUPS: readonly TechGroup[] = [
       { key: 'CHAMFER_SIZE', label: 'Chamfer height', unit: 'mm', min: 0, max: 40, step: 0.1 },
       { key: 'CHAMFER_ANGLE', label: 'Chamfer angle', unit: '°', min: 1, max: 89, step: 1 },
       { key: 'LAYER_STEP', label: 'Layer height', unit: 'mm', min: 0.04, max: 1, step: 0.02 },
+    ],
+  },
+  {
+    id: 'bed',
+    title: 'Print bed',
+    fields: [
+      { key: 'BED_W', label: 'Bed width', unit: 'mm', min: 100, max: 1000, step: 1 },
+      { key: 'BED_H', label: 'Bed depth', unit: 'mm', min: 100, max: 1000, step: 1 },
     ],
   },
 ];

@@ -1,12 +1,13 @@
 // [A]–[I] nel worker: dall'ordine alle mesh, ai fori e alla distinta (SPEC §5, §6).
 import { buildPlate, plateBom, type PlateBom, type PlateModel } from '../geometry/plate';
-import type { Mesh } from 'manifold-3d';
+import type { Manifold, Mesh } from 'manifold-3d';
 import { resolveParams } from '../config';
 import type { Bom } from '../export/bom';
 import type { FontBytesReader } from '../fonts/loadFont';
 import { buildGraph, type SkeletonGraph } from '../geometry/graph';
 import { buildHousing, type HousingHole, type HousingPocket, type HousingSlot } from '../geometry/housing';
 import { getManifold } from '../geometry/manifold';
+import { planSplit, SPLIT_CLEARANCE, type SplitPiece } from '../geometry/split';
 import { rasterize, type GlyphInfo, type RasterizeInput, type TextRaster } from '../geometry/rasterize';
 import { layoutStroke } from '../geometry/strokeLayout';
 import { ledToDiffuserMm, lightPointsFromChains, type LightPoint } from '../geometry/lights';
@@ -54,6 +55,18 @@ export interface GenerateResult {
   /** Fondale (SPEC §13), dietro l'housing fra Z = −spessore e 0. null senza fondale. */
   plateMesh: MeshData | null;
   plate: PlateSummary | null;
+  /** Pezzi per il piatto di stampa (SPEC §14). null: housing e diffusore stanno sul piatto interi. */
+  split: SplitResult | null;
+}
+
+export interface SplitResult {
+  /** Ascisse dei tagli verticali, crescenti, mm. */
+  cutsX: number[];
+  minY: number;
+  maxY: number;
+  /** Un pezzo per elemento, da sinistra a destra. */
+  housing: MeshData[];
+  diffuser: MeshData[];
 }
 
 /** Il fondale senza la mesh: quanto serve all'SVG di taglio, al riepilogo e all'anteprima. */
@@ -84,6 +97,39 @@ function copyMesh(mesh: Mesh): MeshData {
     mergeFromVert: new Uint32Array(mesh.mergeFromVert ?? []),
     mergeToVert: new Uint32Array(mesh.mergeToVert ?? []),
   };
+}
+
+/** Taglia il solido ai piani x = costante dei pezzi, con SPLIT_CLEARANCE d'aria per faccia. */
+function cutSolid(solid: Manifold, pieces: readonly SplitPiece[]): MeshData[] {
+  const meshes: MeshData[] = [];
+  pieces.forEach((piece, i) => {
+    const made: Manifold[] = [];
+    let part = solid;
+    try {
+      if (i > 0) {
+        part = part.trimByPlane([1, 0, 0], piece.x0 + SPLIT_CLEARANCE);
+        made.push(part);
+      }
+      if (i < pieces.length - 1) {
+        part = part.trimByPlane([-1, 0, 0], -(piece.x1 - SPLIT_CLEARANCE));
+        made.push(part);
+      }
+      meshes.push(copyMesh(part.getMesh()));
+    } finally {
+      for (const m of made) m.delete();
+    }
+  });
+  return meshes;
+}
+
+function xRange(points: readonly (readonly [number, number])[]): { x0: number; x1: number } {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  for (const [x] of points) {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+  }
+  return { x0, x1 };
 }
 
 /** Con `paths` la geometria è già in mm: niente [A]–[D] e niente Chaikin. */
@@ -197,6 +243,33 @@ export async function generateSign(order: AnyOrder, read?: FontBytesReader): Pro
         warnings.push(...built.warnings);
       }
     }
+    const plan = planSplit({
+      outline: housing.outline,
+      centerlines: strip.chains.map((chain) => (chain.smooth.length >= 2 ? chain.smooth : chain.points)),
+      keepOut: [
+        ...housing.holes.wireSlots.map((slot) => xRange(slot.points)),
+        ...housing.holes.cornerPockets.map((pocket) => xRange(pocket.points)),
+        ...[...housing.holes.anchors, ...(housing.holes.cable ? [housing.holes.cable] : []), ...housing.holes.dotWires].map(
+          (hole) => ({ x0: hole.x - hole.d / 2, x1: hole.x + hole.d / 2 }),
+        ),
+      ],
+      bedW: params.BED_W,
+      bedH: params.BED_H,
+    });
+    warnings.push(...plan.warnings);
+    let split: SplitResult | null = null;
+    if (plan.cutsX.length > 0) {
+      split = {
+        cutsX: plan.cutsX,
+        minY: plan.bounds.minY,
+        maxY: plan.bounds.maxY,
+        housing: cutSolid(housing.solid, plan.pieces),
+        diffuser: cutSolid(housing.diffuser, plan.pieces),
+      };
+      split.housing.forEach((mesh, i) => {
+        if (mesh.triVerts.length === 0) warnings.push(`Suddivisione per il piatto: il pezzo ${i + 1} è vuoto.`);
+      });
+    }
     if (housing.solid.status() !== 'NoError') warnings.push(`Housing non manifold (${housing.solid.status()}).`);
     if (housing.diffuser.status() !== 'NoError') warnings.push(`Diffusore non manifold (${housing.diffuser.status()}).`);
     return {
@@ -225,6 +298,7 @@ export async function generateSign(order: AnyOrder, read?: FontBytesReader): Pro
       segments: editSegments(strip),
       plateMesh,
       plate,
+      split,
     };
   } finally {
     housing.solid.delete();

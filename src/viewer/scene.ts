@@ -10,6 +10,8 @@ import {
   DoubleSide,
   HemisphereLight,
   HalfFloatType,
+  LineDashedMaterial,
+  LineSegments,
   Mesh,
   MeshStandardMaterial,
   MOUSE,
@@ -55,6 +57,8 @@ export interface SignViewData {
   ledGapMm: number;
   /** Fondale dietro l'housing (SPEC §13), con il suo materiale. Assente: nessun fondale. */
   plate?: { mesh: StlMesh; material: PlateMaterial } | null;
+  /** Tagli per il piatto di stampa (SPEC §14): segmenti verticali a x costante, sopra l'insegna. */
+  cuts?: readonly { x: number; y0: number; y1: number; z: number }[];
 }
 
 export interface SignScene {
@@ -220,6 +224,8 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
   let housingMesh: Mesh | null = null;
   let diffuserMesh: Mesh | null = null;
   let plateMesh: Mesh | null = null;
+  let cutLines: LineSegments | null = null;
+  const cutMaterial = new LineDashedMaterial({ color: 0xffffff, dashSize: 4, gapSize: 3, depthTest: false, transparent: true, opacity: 0.9 });
   let lights: readonly LightPoint[] = [];
   let ledGap = 6;
   let mode: PreviewMode = 'accesa';
@@ -459,6 +465,21 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
         plateMesh.geometry.dispose();
         plateMesh = null;
       }
+      if (cutLines) {
+        scene.remove(cutLines);
+        cutLines.geometry.dispose();
+        cutLines = null;
+      }
+      if (sign.cuts && sign.cuts.length > 0) {
+        const positions = new Float32Array(sign.cuts.length * 6);
+        sign.cuts.forEach((cut, i) => positions.set([cut.x, cut.y0, cut.z, cut.x, cut.y1, cut.z], i * 6));
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new BufferAttribute(positions, 3));
+        cutLines = new LineSegments(geometry, cutMaterial);
+        cutLines.computeLineDistances();
+        cutLines.renderOrder = 10;
+        scene.add(cutLines);
+      }
       ledGap = Math.max(0.4, sign.ledGapMm);
       housingMesh = new Mesh(geometryOf(sign.housing), housingMaterial);
       diffuserMesh = new Mesh(geometryOf(sign.diffuser), diffuserOff);
@@ -512,6 +533,8 @@ export function mountSignScene(host: HTMLElement, options?: { background?: numbe
       housingMesh?.geometry.dispose();
       diffuserMesh?.geometry.dispose();
       plateMesh?.geometry.dispose();
+      cutLines?.geometry.dispose();
+      cutMaterial.dispose();
       splat.geometry.dispose();
       housingMaterial.dispose();
       diffuserOff.dispose();

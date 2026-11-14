@@ -28,6 +28,9 @@ Una voce si spunta quando `npm run check` passa.
 - [x] Ingombro dell'insegna: frecce larghezza/altezza sull'anteprima, «Size» nel riepilogo, «Letter height» nello strumento Size
 - [ ] L'insegna di partenza («Ciao» a 12 cm) nasce con «curves too tight» e l'invio bloccato: alzare la misura di partenza o attendere `HINGE_PITCH` misurato
 - [ ] Puntino della *i*: l'accesso sono due fori Ø2,5 (`DOT_WIRE_HOLE_D`), stretti per 3 fili e per la striscia da 10 mm: decidere fra fori più larghi, asola piena o puntino non illuminato
+- [x] Spessore della cornice spostato dall'anteprima allo strumento Tech, gruppo Channel, come «Wall thickness»
+- [ ] Strumento Tech: disegno della sezione del pezzo (canale, pareti, fondo, striscia) con le quote, e una riga di spiegazione **in inglese** per ogni parametro (es. «Channel width: the groove the strip sits in. Strip width plus a little play.»)
+- [ ] Strumento Tech: avviso in inglese quando il canale è più stretto della striscia (`CHANNEL_W` < `STRIP_W`) o meno profondo del suo spessore (`CHANNEL_DEPTH` < `STRIP_T`); oggi la pagina li accetta in silenzio
 - [ ] Taglie sotto il minimo disattivate, con il motivo
 - [ ] Alimentatore, fissaggio e bozza di approvazione nel riepilogo
 - [ ] Pannello Info: come funziona, esploso, FAQ (§12.9)
@@ -51,7 +54,11 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] Test di §4ter
 
 ### Geometria e produzione
-- [ ] Suddivisione per il piatto di stampa: scrivere la sezione (oggi fuori scope, §9)
+- [x] Suddivisione per il piatto di stampa: tagli verticali automatici, piatto 300 × 300 modificabile in Tech, cornice e diffusore, ZIP con tutti i pezzi, tagli tratteggiati sull'anteprima
+- [ ] Suddivisione: scrivere la sezione nella SPEC (§14) e togliere la voce da «Fuori scope» (§9)
+- [ ] Suddivisione: tagli orizzontali per insegne più alte del piatto (oggi solo un avviso)
+- [ ] Suddivisione: tagli spostabili a mano sull'anteprima
+- [ ] Suddivisione: spine di allineamento o incastri, per chi non usa il fondale
 - [ ] `plate.dxf`
 - [ ] Incisione «RETRO» sul fondale
 - [ ] Test nuovi di §12.10

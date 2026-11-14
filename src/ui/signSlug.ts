@@ -18,6 +18,16 @@ export function stlFileName(source: string, heightMm: number, part: 'housing' | 
   return `${signSlug(source)}-${heightMm}mm-${part}.stl`;
 }
 
+/** Pezzo `index` di `count` (da 1) quando l'insegna è divisa per il piatto di stampa (SPEC §14). */
+export function partFileName(source: string, heightMm: number, part: 'housing' | 'diffuser', index: number, count: number): string {
+  return `${signSlug(source)}-${heightMm}mm-${part}-${index}of${count}.stl`;
+}
+
+/** Archivio con tutti i file di un'insegna divisa in pezzi. */
+export function zipFileName(source: string, heightMm: number): string {
+  return `${signSlug(source)}-${heightMm}mm.zip`;
+}
+
 /** File di taglio laser del fondale (SPEC §13): stesso nome dell'STL, in SVG. */
 export function plateSvgFileName(source: string, heightMm: number): string {
   return `${signSlug(source)}-${heightMm}mm-fondale.svg`;

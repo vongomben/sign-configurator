@@ -294,6 +294,9 @@ export interface Params {
   DOT_OVERHANG_MM: number;
   /** Sotto questa frazione di linea centrale illuminata, la lettera avvisa. */
   COVERAGE_MIN: number;
+  /** Piatto di stampa, mm: oltre, housing e diffusore si dividono in pezzi (SPEC §14). */
+  BED_W: number;
+  BED_H: number;
 }
 
 export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
@@ -341,6 +344,8 @@ export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({
   DOT_WIRE_HOLE_D: 2.5,
   DOT_OVERHANG_MM: 1.5,
   COVERAGE_MIN: 0.85,
+  BED_W: 300,
+  BED_H: 300,
 });
 
 /** Applica gli override di `order.params` ai default e ricalcola MIN_LETTER_H dal profilo. */
