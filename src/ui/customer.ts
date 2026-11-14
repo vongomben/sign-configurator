@@ -70,8 +70,8 @@ const ICONS: Record<string, string> = {
 const app = document.querySelector<HTMLElement>('#app')!;
 const fontOptions = FONTS.map((font) => `<option value="${font.id}">${font.name}</option>`).join('');
 const fontCards = FONTS.map((font, index) => `
-  <button type="button" class="font-card" data-font="${font.id}" aria-pressed="${index === 0 ? 'true' : 'false'}">
-    <span class="font-sample">Ciao</span>
+  <button type="button" class="font-card" data-font="${font.id}"${font.sample ? ` data-sample="${font.sample}"` : ''} aria-pressed="${index === 0 ? 'true' : 'false'}">
+    <span class="font-sample">${font.sample ?? 'Ciao'}</span>
     <span class="font-name">${font.name}</span>
   </button>`).join('');
 const sizeChips = SIZES.map((size) => `
@@ -546,8 +546,11 @@ function applyNeon(hex: string): void {
 
 function syncFontSamples(): void {
   const sample = textInput.value.trim() || 'Ciao';
-  for (const el of document.querySelectorAll<HTMLElement>('.font-sample')) el.textContent = sample;
   for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
+    // I font CJK non si scaricano finché non si scelgono: la loro miniatura resta il nome della
+    // scrittura, non il testo digitato, che uscirebbe nel font di sistema.
+    const el = card.querySelector<HTMLElement>('.font-sample');
+    if (el) el.textContent = card.dataset.sample ?? sample;
     card.setAttribute('aria-pressed', card.dataset.font === fontInput.value ? 'true' : 'false');
   }
 }
@@ -1683,7 +1686,8 @@ if (window.location.hash.startsWith('#o=')) {
 
 void (async () => {
   await Promise.all(
-    FONTS.filter((font) => font.kind === 'outline').map(async (font) => {
+    // `lazy`: il file arriva quando il cliente sceglie il font. Il worker lo scarica da sé.
+    FONTS.filter((font) => font.kind === 'outline' && !font.lazy).map(async (font) => {
       try {
         const face = new FontFace(font.id, `url(${import.meta.env.BASE_URL}${font.file})`);
         await face.load();

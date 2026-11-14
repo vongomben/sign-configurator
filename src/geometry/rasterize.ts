@@ -387,8 +387,11 @@ function glyphTop(font: Font, ch: string): number | null {
  * linea di base. Le metriche dichiarate (OS/2) dei font script sono spesso inaffidabili. Servono a
  * compilare il registro, una volta per font.
  */
-export function measureFontMetrics(font: Font): { capHeight: number | null; xHeight: number | null } {
-  return { capHeight: glyphTop(font, 'H') ?? glyphTop(font, 'I'), xHeight: glyphTop(font, 'x') };
+export function measureFontMetrics(
+  font: Font,
+  heightGlyph = 'H',
+): { capHeight: number | null; xHeight: number | null } {
+  return { capHeight: glyphTop(font, heightGlyph) ?? glyphTop(font, 'I'), xHeight: glyphTop(font, 'x') };
 }
 
 /**

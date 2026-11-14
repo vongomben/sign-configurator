@@ -4,8 +4,20 @@ Bozza, da incollare in `SPEC.md` dopo §4bis. Sostituisce, per queste quattro sc
 «alfabeti non latini» di §12.8 (preventivo su misura): cinese, giapponese, arabo ed ebraico entrano
 nel configuratore.
 
-**Stato**: i font sono scelti sulla carta (licenza, copertura, tratto). Nessuno è ancora passato dalla
-pipeline: la fase 0 qui sotto decide se restano o se entra il ripiego.
+**Stato**: cinese e giapponese sono **misurati e integrati** (14 novembre 2026). Arabo ed ebraico sono
+ancora scelti sulla carta: per loro la fase 0 resta da fare, e serve prima il motore di composizione.
+
+Fase 0, variazione della larghezza del tratto sullo scheletro (limite 25 %):
+
+| Font | Variazione | Esito |
+|---|---|---|
+| M PLUS Rounded 1c Light | 7–10 % | adottato per il giapponese |
+| Noto Sans SC Light | 6–9 % | adottato per il cinese |
+| LXGW WenKai Light | 30–37 % | **scartato**: il pennello modula troppo il tratto |
+
+I file sono sottoinsiemi (GB 2312 e Shift-JIS) di circa 2,5 MB l'uno, invece di 18 e 27 MB: vedi
+`public/fonts/README.md`. Devono essere **istanze statiche**: opentype.js ignora gli assi dei font
+variabili e leggerebbe il master sbagliato.
 
 ### Font
 
@@ -14,7 +26,7 @@ Un font per scrittura, tutti SIL OFL, tutti `kind: "outline"`, `stripMode: "cent
 
 | Scrittura | `id` | Font | Perché | Ripiego |
 |---|---|---|---|---|
-| Cinese (semplificato e tradizionale) | `lxgw-wenkai` | **LXGW WenKai** Light | scrittura a penna, derivata da Klee One, copre entrambe le forme | Chiron GoRound TC (tondo, tratto costante) |
+| Cinese (semplificato) | `noto-sans-sc` | **Noto Sans SC** Light | tratto uniforme, copre tutto il cinese quotidiano, si abbina a M PLUS Rounded | — |
 | Giapponese (kana + kanji) | `mplus-rounded` | **M PLUS Rounded 1c** Light | terminali tondi e tratto costante: è già la forma di un tubo | Klee One (a penna) |
 | Arabo | `playpen-arabic` | **Playpen Sans Arabic** Light | scrittura a mano, monolinea, ha anche il latino | Lemonada |
 | Ebraico | `playpen-hebrew` | **Playpen Sans Hebrew** Light | corsivo a mano, stessa famiglia dell'arabo | Varela Round |
@@ -24,8 +36,10 @@ Un font per scrittura, tutti SIL OFL, tutti `kind: "outline"`, `stripMode: "cent
 - Playpen Sans è un font variabile: si usa un'**istanza statica** Light (file a sé), non l'asse `wght`
   letto a runtime. Il suo rimescolatore di glifi alternativi resta **spento**: ogni lettera ha sempre
   la stessa forma (determinismo, §6).
-- LXGW WenKai ha un tratto con leggera modulazione (attacchi e uncini della penna). Se in fase 0 la
-  larghezza misurata sullo scheletro varia oltre ±25 % della mediana, si passa al ripiego.
+- Per il cinese si era partiti da LXGW WenKai, che è scrittura a pennello e avrebbe seguito lo spirito
+  dei corsivi latini. La misura l'ha scartato: la larghezza del tratto varia del 30–37 %, oltre il
+  limite del 25 %. Il canale è comunque a larghezza fissa, quindi il sottile/grosso del pennello si
+  sarebbe perso lo stesso.
 
 ### Registro (`src/fonts/registry.ts`)
 

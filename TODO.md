@@ -45,13 +45,19 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] SPEC: togliere i riferimenti ad admin (§1, §5, §7, §8, §12)
 
 ### Scritture non latine (§4ter)
-- [ ] Fase 0: i quattro font in `debug.html` a 200 e 400 mm; confermare o passare al ripiego
-- [ ] Registro: `script`, `direction`, `shaper`, `heightGlyph`, `lazy`
-- [ ] Caricamento `lazy` e miniature statiche
-- [ ] Cinese (LXGW WenKai) e giapponese (M PLUS Rounded 1c)
-- [ ] harfbuzzjs + bidi; ebraico (Playpen Sans Hebrew), poi arabo (Playpen Sans Arabic)
-- [ ] Strumento Font: gruppi per scrittura, proposta del font giusto
-- [ ] Test di §4ter
+- [x] Fase 0 misurata sulla pipeline: M PLUS Rounded 1c Light 7–10 % di variazione del tratto (passa),
+      LXGW WenKai Light 30–37 % (**scartato**, limite 25 %), Noto Sans SC Light 6–9 % (passa)
+- [x] Registro: `script`, `heightGlyph` (永), `lazy`, `sample`
+- [x] Cinese (Noto Sans SC Light) e giapponese (M PLUS Rounded 1c Light), sottoinsiemi da ~2,5 MB
+- [x] Caricamento `lazy`: i font CJK si scaricano solo quando il cliente li sceglie
+- [x] Test di §4ter: tratto costante, topologia stabile fra 200 e 400 mm, 永 attraverso tutta la pipeline
+- [ ] Miniature: la scheda di un font CJK mostra il nome della scrittura, non il font. Servono
+      miniature statiche SVG (`public/fonts/thumbs/`)
+- [ ] Strumento Font: gruppi per scrittura, e proposta del font giusto quando il testo non è latino
+- [ ] `direction` e `shaper`: harfbuzzjs + bidi; ebraico (Playpen Sans Hebrew), poi arabo (Playpen Sans Arabic)
+- [ ] Caratteri fuori dal sottoinsieme: oggi avvisa e salta. Collegarlo al preventivo su misura (§12.8)
+- [ ] Un carattere cinese costa 7–10 spezzoni: l'altezza minima e il prezzo vanno verificati su un
+      testo vero prima di aprire la scrittura ai clienti
 
 ### Geometria e produzione
 - [x] Suddivisione per il piatto di stampa: tagli verticali automatici, piatto 300 × 300 modificabile in Tech, cornice e diffusore, ZIP con tutti i pezzi, tagli tratteggiati sull'anteprima

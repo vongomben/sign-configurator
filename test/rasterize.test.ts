@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { loadFont, type FontBytesReader } from '../src/fonts/loadFont';
-import { FONTS, getFont } from '../src/fonts/registry';
+import { FONTS, getFont, heightGlyphOf } from '../src/fonts/registry';
 import {
   MAX_RASTER_PIXELS,
   RASTER_MARGIN_PX,
@@ -21,6 +21,10 @@ const readPublic: FontBytesReader = async (file) => {
 };
 
 const FONT_IDS = FONTS.filter((font) => font.kind === 'outline').map((font) => font.id);
+// I font CJK misurano l'altezza su 永 e non hanno maiuscole da controllare: queste prove sono latine.
+const LATIN_IDS = FONTS.filter((font) => font.kind === 'outline' && (font.script ?? 'latin') === 'latin').map(
+  (font) => font.id,
+);
 const TEXT = 'Ciao Torino';
 
 const filled = (r: Raster): number => r.data.reduce((n, v) => n + v, 0);
@@ -143,9 +147,9 @@ describe('rasterizeContours (sintetici)', () => {
 
 describe('registro dei font', () => {
   for (const fontId of FONT_IDS) {
-    it(`${fontId}: capHeightMeasured e xHeightMeasured corrispondono ai glifi H e x del TTF`, async () => {
+    it(`${fontId}: capHeightMeasured e xHeightMeasured corrispondono ai glifi del TTF`, async () => {
       const entry = getFont(fontId)!;
-      const m = measureFontMetrics(await loadFont(fontId, readPublic));
+      const m = measureFontMetrics(await loadFont(fontId, readPublic), heightGlyphOf(entry));
       expect(entry.capHeightMeasured).toBe(m.capHeight);
       expect(entry.xHeightMeasured).toBe(m.xHeight);
       expect(entry.hollowTubes === (entry.tube !== undefined)).toBe(true);
@@ -179,7 +183,7 @@ describe('registro dei font', () => {
 });
 
 describe('rasterize (testo)', () => {
-  for (const fontId of FONT_IDS) {
+  for (const fontId of LATIN_IDS) {
     it(`${fontId}: "${TEXT}", maiuscole all'altezza attesa entro ±1 px`, async () => {
       const heightMm = 50;
       const r = await rasterize({ text: TEXT, fontId, heightMm }, readPublic);

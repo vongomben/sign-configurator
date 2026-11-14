@@ -20,6 +20,9 @@ export type StripMode = 'centerline' | 'walls';
 /** outline: TTF, pipeline [A]–[B]. stroke: tratto singolo, si entra in [C]. */
 export type FontKind = 'outline' | 'stroke';
 
+/** Scrittura del font (SPEC §4ter): decide il glifo che dà l'altezza chiesta dal cliente. */
+export type FontScript = 'latin' | 'han' | 'japanese';
+
 export interface FontEntry {
   id: string;
   name: string;
@@ -27,7 +30,10 @@ export interface FontEntry {
   /** Percorso relativo a `public/` */
   file: string;
   defaultTracking: number;
-  /** Sommità del glifo "H" (ripiego "I") sopra la linea di base: è l'altezza richiesta dal cliente. */
+  /**
+   * Sommità di `heightGlyph` sopra la linea di base: è l'altezza richiesta dal cliente.
+   * Le metriche dichiarate (OS/2) non si usano: sui corsivi sono inaffidabili.
+   */
   capHeightMeasured: number;
   /** Sommità del glifo "x". */
   xHeightMeasured: number;
@@ -37,7 +43,26 @@ export interface FontEntry {
   tube?: TubeGeometry;
   /** Come lo scheletro diventa la striscia. Vedi `StripMode`. */
   stripMode: StripMode;
+  /** Scrittura. Assente: latina. */
+  script?: FontScript;
+  /**
+   * Glifo che definisce l'altezza. Assente: "H" (ripiego "I"). Per cinese e giapponese è 永, il
+   * carattere di riferimento dei font CJK: la "H" lì è un glifo latino di servizio.
+   */
+  heightGlyph?: string;
+  /**
+   * Il file si scarica solo quando il cliente sceglie il font, e non entra nel precaricamento
+   * della pagina: i font CJK pesano qualche MB anche da sottoinsieme.
+   */
+  lazy?: boolean;
+  /** Testo della miniatura quando il campione latino non direbbe nulla del font. */
+  sample?: string;
   notes: string;
+}
+
+/** Il glifo da cui si misura l'altezza del font. */
+export function heightGlyphOf(entry: Pick<FontEntry, 'heightGlyph'>): string {
+  return entry.heightGlyph ?? 'H';
 }
 
 export const FONTS: readonly FontEntry[] = [
@@ -90,6 +115,43 @@ export const FONTS: readonly FontEntry[] = [
     hollowTubes: false,
     stripMode: 'centerline',
     notes: 'SIL OFL. Tratto singolo, derivato di Allura (nome riservato non usato). SVG di Sheldon B. Michaels e Windell H. Oskay.',
+  },
+  {
+    id: 'noto-sans-sc',
+    name: 'Noto Sans SC',
+    kind: 'outline',
+    file: 'fonts/NotoSansSC/NotoSansSC-Light.ttf',
+    defaultTracking: 0,
+    capHeightMeasured: 833,
+    xHeightMeasured: 534,
+    hollowTubes: false,
+    stripMode: 'centerline',
+    script: 'han',
+    heightGlyph: '永',
+    lazy: true,
+    sample: '中文',
+    notes:
+      'SIL OFL. Cinese semplificato. Istanza statica Light: opentype.js ignora gli assi dei font ' +
+      'variabili e leggerebbe il master Thin. Tratto costante entro il 9 %. Sottoinsieme GB 2312, ' +
+      'vedi public/fonts/README.md.',
+  },
+  {
+    id: 'mplus-rounded',
+    name: 'M PLUS Rounded 1c',
+    kind: 'outline',
+    file: 'fonts/MPLUSRounded1c/MPLUSRounded1c-Light.ttf',
+    defaultTracking: 0,
+    capHeightMeasured: 811.375,
+    xHeightMeasured: 520,
+    hollowTubes: false,
+    stripMode: 'centerline',
+    script: 'japanese',
+    heightGlyph: '永',
+    lazy: true,
+    sample: '日本語',
+    notes:
+      'SIL OFL. Giapponese, peso Light: terminali tondi e tratto costante entro il 10 %, cioè già ' +
+      'la forma di un tubo. Sottoinsieme Shift-JIS, vedi public/fonts/README.md.',
   },
 ];
 
