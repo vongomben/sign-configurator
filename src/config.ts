@@ -217,6 +217,18 @@ export const STRIP_10MM: StripProfile = Object.freeze({
   LED_PER_M: 144,
 });
 
+/**
+ * Aria fra la striscia e le pareti del canale: `CHANNEL_W = STRIP_W + CHANNEL_CLEARANCE`.
+ * Vale per ogni profilo, e l'interfaccia la usa per far seguire il canale alla striscia.
+ */
+export const CHANNEL_CLEARANCE = 0.4;
+
+/**
+ * Aria fra la faccia dei LED e il diffusore: `CHANNEL_DEPTH = STRIP_T + LED_AIR`. È la sigma della
+ * gaussiana in anteprima: più ce n'è, più la luce dei singoli LED si fonde.
+ */
+export const LED_AIR = 6;
+
 export const STRIP_PROFILES: readonly StripProfile[] = Object.freeze([STRIP_10MM, COB_5MM]);
 export const DEFAULT_STRIP: StripProfile = STRIP_10MM;
 
@@ -364,6 +376,21 @@ export function rMin(p: Pick<StripProfile, 'HINGE_PITCH' | 'HINGE_MAX_DEG'>): nu
 /** Altezza minima di lettera derivata dal profilo: diametro della piega più stretta. */
 export function minLetterH(p: Pick<StripProfile, 'HINGE_PITCH' | 'HINGE_MAX_DEG'>): number {
   return 2 * rMin(p);
+}
+
+/**
+ * La striscia ci sta nel canale? Avvisi in italiano come gli altri del generatore: un canale più
+ * stretto o meno profondo della striscia descrive un pezzo che non si può montare.
+ */
+export function stripFitWarnings(p: Pick<Params, 'STRIP_W' | 'STRIP_T' | 'CHANNEL_W' | 'CHANNEL_DEPTH'>): string[] {
+  const out: string[] = [];
+  if (p.CHANNEL_W < p.STRIP_W) {
+    out.push(`Canale largo ${p.CHANNEL_W} mm: la striscia da ${p.STRIP_W} mm non ci entra.`);
+  }
+  if (p.CHANNEL_DEPTH < p.STRIP_T) {
+    out.push(`Canale profondo ${p.CHANNEL_DEPTH} mm: la striscia è spessa ${p.STRIP_T} mm.`);
+  }
+  return out;
 }
 
 /** Altezza totale del corpo: FLOOR + CHANNEL_DEPTH. */

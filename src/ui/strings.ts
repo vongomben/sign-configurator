@@ -160,6 +160,8 @@ export function customerMessage(warning: string): string | null {
     [/sotto il passo di taglio/, () => 'A stroke is too short for the LED strip: make the sign bigger.'],
     [/^Sagome che si fondono/, () => 'Some strokes are too close together: make the sign bigger.'],
     [/bassa risoluzione/, () => 'Low-resolution image for this size: upload a larger one.'],
+    [/^Canale largo/, () => 'The channel is narrower than the LED strip: widen it under Tech.'],
+    [/^Canale profondo/, () => 'The channel is shallower than the LED strip: deepen it under Tech.'],
     [/tratto non uniforme/, () => 'Uneven stroke: try the Outline trace.'],
     [/^Puntino troppo piccolo|^Puntino non/, () => 'The dot is too small to light at this size.'],
     [/^Trattino fuori/, () => 'The dash does not fit inside the dot.'],

@@ -8,6 +8,8 @@ describe('testi della pagina cliente', () => {
     expect(customerMessage('Sagome che si fondono: distanza 8.4 mm, minimo 10.8 mm, in (245.7, 31.8).')).toMatch(/too close/);
     expect(customerMessage('Alimentatore da 18 A a 5 V: oltre i 10 A del controller GLEDOPTO.')).toMatch(/10 A/);
     expect(customerMessage('Spezzone 1: 1 fori di ancoraggio su 2 richiesti, in (36.0, 6.3).')).toBeNull();
+    expect(customerMessage('Canale largo 6 mm: la striscia da 10 mm non ci entra.')).toMatch(/narrower than the LED strip/);
+    expect(customerMessage('Canale profondo 3 mm: la striscia è spessa 6 mm.')).toMatch(/shallower than the LED strip/);
   });
 
   it('niente doppioni e niente italiano: quello che non riguarda il cliente sparisce', () => {

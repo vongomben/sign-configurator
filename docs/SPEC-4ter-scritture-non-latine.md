@@ -4,8 +4,13 @@ Bozza, da incollare in `SPEC.md` dopo §4bis. Sostituisce, per queste quattro sc
 «alfabeti non latini» di §12.8 (preventivo su misura): cinese, giapponese, arabo ed ebraico entrano
 nel configuratore.
 
-**Stato**: cinese e giapponese sono **misurati e integrati** (14 novembre 2026). Arabo ed ebraico sono
-ancora scelti sulla carta: per loro la fase 0 resta da fare, e serve prima il motore di composizione.
+**Stato**: cinese e giapponese sono **misurati e integrati** (14 novembre 2026).
+
+**Arabo ed ebraico sono rimandati.** Non bastano i font: l'arabo cambia la forma di ogni lettera
+secondo la posizione nella parola, e in entrambe le scritture l'ordine visivo va calcolato
+(algoritmo bidirezionale). Serve un motore di composizione, harfbuzzjs in WebAssembly, caricato solo
+per quei font. È un lavoro a sé e non blocca niente: fino ad allora quelle scritture restano al
+preventivo su misura (§12.8). Quanto segue su di loro è una traccia, non ancora una scelta.
 
 Fase 0, variazione della larghezza del tratto sullo scheletro (limite 25 %):
 

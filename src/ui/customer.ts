@@ -1,6 +1,6 @@
 // Cliente: l'insegna a tutto schermo, gli strumenti in un foglio (SPEC §12.2).
 import './customer.css';
-import { controllerOf, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
+import { CHANNEL_CLEARANCE, controllerOf, CUSTOMER_STL_DOWNLOAD, DEFAULT_PARAMS, GENERATOR_VERSION, LED_AIR, ORDER_SCHEMA_VERSION, resolveParams, type Params } from '../config';
 import { PRICING_VERSION } from '../pricing';
 import { decodeShare, encodeShare } from '../order/share';
 import type { RasterImageSource, SvgImageSource } from '../order/schema';
@@ -1127,7 +1127,7 @@ async function showSign(): Promise<void> {
     const leds = result.lightPoints.length > 0 ? S.status.leds(result.lightPoints.length) : S.status.noLeds;
     // Al cliente solo gli avvisi che lo riguardano, tradotti; i bloccanti stanno in Richiedi.
     const shown = result.warnings.filter((warning) => {
-      if (/bassa risoluzione|tratto non uniforme|^Puntino troppo piccolo|^Puntino non|^Trattino fuori/.test(warning)) return true;
+      if (/bassa risoluzione|tratto non uniforme|^Puntino troppo piccolo|^Puntino non|^Trattino fuori|^Canale /.test(warning)) return true;
       return image && warning.startsWith('Sagome che si fondono');
     });
     const extra = customerMessages([...notes, ...shown]).join(' ');
@@ -1242,15 +1242,44 @@ wallInput.addEventListener('change', () => {
   void showSign();
 });
 
-/** L'asola è larga quanto il canale (SPEC §3) finché non la si cambia a mano. */
-let lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
-function onTechChange(): void {
-  const channel = techNumberInputs.get('CHANNEL_W')!;
-  const slot = techNumberInputs.get('WIRE_SLOT_W')!;
-  if (channel.value !== lastChannelW) {
-    if (slot.value === lastChannelW) slot.value = channel.value;
-    lastChannelW = channel.value;
+/**
+ * Campi che si inseguono (SPEC §3): il canale è la striscia più la tolleranza, la profondità è lo
+ * spessore della striscia più l'aria sopra i LED, l'asola è larga quanto il canale. Il campo a valle
+ * segue solo finché vale ancora quello che gli toccherebbe: appena lo si cambia a mano, resta fermo.
+ * L'ordine conta: così una modifica alla striscia arriva fino all'asola.
+ */
+const TECH_LINKS: readonly { from: TechNumericKey; to: TechNumericKey; add: number }[] = [
+  { from: 'STRIP_W', to: 'CHANNEL_W', add: CHANNEL_CLEARANCE },
+  { from: 'STRIP_T', to: 'CHANNEL_DEPTH', add: LED_AIR },
+  { from: 'CHANNEL_W', to: 'WIRE_SLOT_W', add: 0 },
+];
+
+const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+const lastTech = new Map<TechNumericKey, string>();
+
+/** Fissa i valori da cui ripartono i legami: all'avvio, dopo un Reset, dopo un design caricato. */
+function rememberTechLinks(): void {
+  for (const link of TECH_LINKS) {
+    lastTech.set(link.from, techNumberInputs.get(link.from)!.value);
+    lastTech.set(link.to, techNumberInputs.get(link.to)!.value);
   }
+}
+rememberTechLinks();
+
+function onTechChange(): void {
+  // `lastTech` resta ai valori di prima per tutto il giro: così il canale appena spostato dalla
+  // striscia risulta cambiato anche al legame successivo, e l'asola lo segue.
+  for (const link of TECH_LINKS) {
+    const from = techNumberInputs.get(link.from)!;
+    const to = techNumberInputs.get(link.to)!;
+    const before = lastTech.get(link.from);
+    if (before === undefined || from.value === before) continue;
+    const previous = Number(before);
+    const next = Number(from.value);
+    const followed = Number.isFinite(previous) && Number(to.value) === round3(previous + link.add);
+    if (followed && Number.isFinite(next)) to.value = String(round3(next + link.add));
+  }
+  rememberTechLinks();
   for (const field of TECH_FIELDS) {
     const input = techNumberInputs.get(field.key)!;
     input.setAttribute('aria-invalid', techFieldInvalid(field, input.value) ? 'true' : 'false');
@@ -1292,7 +1321,7 @@ techReset.addEventListener('click', () => {
   techVoltageInput.value = String(DEFAULT_PARAMS.STRIP_V);
   techControllerInput.value = DEFAULT_PARAMS.CONTROLLER_ID;
   techBoxInput.value = DEFAULT_PARAMS.BOX_ID;
-  lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+  rememberTechLinks();
   onTechChange();
 });
 for (const card of document.querySelectorAll<HTMLButtonElement>('.font-card')) {
@@ -1535,7 +1564,7 @@ function applyOrder(order: SignOrderV4): void {
     input.value = String(params[field.key] ?? DEFAULT_PARAMS[field.key]);
     input.setAttribute('aria-invalid', techFieldInvalid(field, input.value) ? 'true' : 'false');
   }
-  lastChannelW = techNumberInputs.get('CHANNEL_W')!.value;
+  rememberTechLinks();
   setSelect(techProfileInput, params.EDGE_PROFILE ?? DEFAULT_PARAMS.EDGE_PROFILE, DEFAULT_PARAMS.EDGE_PROFILE);
   const density = params.LED_PER_M ?? DEFAULT_PARAMS.LED_PER_M;
   techDensityInput.value = String(LED_DENSITIES.includes(density) ? density : DEFAULT_LED_DENSITY);

@@ -1,7 +1,7 @@
 // [A]–[I] nel worker: dall'ordine alle mesh, ai fori e alla distinta (SPEC §5, §6).
 import { buildPlate, plateBom, type PlateBom, type PlateModel } from '../geometry/plate';
 import type { Manifold, Mesh } from 'manifold-3d';
-import { resolveParams } from '../config';
+import { resolveParams, stripFitWarnings } from '../config';
 import type { Bom } from '../export/bom';
 import type { FontBytesReader } from '../fonts/loadFont';
 import { buildGraph, type SkeletonGraph } from '../geometry/graph';
@@ -166,7 +166,7 @@ function stripFromPaths(order: SignOrderV4, params: ReturnType<typeof resolvePar
 export async function generateSign(order: AnyOrder, read?: FontBytesReader): Promise<GenerateResult> {
   const current = migrateOrder(order);
   const params = resolveParams(current.params);
-  const warnings: string[] = [];
+  const warnings: string[] = [...stripFitWarnings(params)];
 
   let glyphs: GlyphInfo[] = [];
   let strip: StripModel;

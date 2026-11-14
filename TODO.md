@@ -30,7 +30,9 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] Puntino della *i*: l'accesso sono due fori Ø2,5 (`DOT_WIRE_HOLE_D`), stretti per 3 fili e per la striscia da 10 mm: decidere fra fori più larghi, asola piena o puntino non illuminato
 - [x] Spessore della cornice spostato dall'anteprima allo strumento Tech, gruppo Channel, come «Wall thickness»
 - [ ] Strumento Tech: disegno della sezione del pezzo (canale, pareti, fondo, striscia) con le quote, e una riga di spiegazione **in inglese** per ogni parametro (es. «Channel width: the groove the strip sits in. Strip width plus a little play.»)
-- [ ] Strumento Tech: avviso in inglese quando il canale è più stretto della striscia (`CHANNEL_W` < `STRIP_W`) o meno profondo del suo spessore (`CHANNEL_DEPTH` < `STRIP_T`); oggi la pagina li accetta in silenzio
+- [x] Striscia e canale legati: cambiando `STRIP_W` il canale e l'asola lo seguono (+0,4 mm di
+      tolleranza), e `STRIP_T` comanda la profondità (+6 mm d'aria sopra i LED). Toccato a mano,
+      il campo a valle smette di seguire. Se la striscia non ci sta, la pagina lo dice
 - [ ] Taglie sotto il minimo disattivate, con il motivo
 - [ ] Alimentatore, fissaggio e bozza di approvazione nel riepilogo
 - [ ] Pannello Info: come funziona, esploso, FAQ (§12.9)
@@ -54,7 +56,9 @@ Una voce si spunta quando `npm run check` passa.
 - [ ] Miniature: la scheda di un font CJK mostra il nome della scrittura, non il font. Servono
       miniature statiche SVG (`public/fonts/thumbs/`)
 - [ ] Strumento Font: gruppi per scrittura, e proposta del font giusto quando il testo non è latino
-- [ ] `direction` e `shaper`: harfbuzzjs + bidi; ebraico (Playpen Sans Hebrew), poi arabo (Playpen Sans Arabic)
+- [ ] ~~Arabo ed ebraico~~ — **rimandati** (14 novembre 2026). Servono un motore di composizione
+      (harfbuzzjs) e l'algoritmo bidirezionale: è un lavoro a sé, e cinese e giapponese coprono già
+      la domanda prevedibile. Restano al preventivo su misura (§12.8)
 - [ ] Caratteri fuori dal sottoinsieme: oggi avvisa e salta. Collegarlo al preventivo su misura (§12.8)
 - [ ] Un carattere cinese costa 7–10 spezzoni: l'altezza minima e il prezzo vanno verificati su un
       testo vero prima di aprire la scrittura ai clienti

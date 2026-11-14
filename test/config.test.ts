@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PARAMS, DEFAULT_STRIP, minLetterH, resolveParams, rMin, totalHeight } from '../src/config';
+import {
+  CHANNEL_CLEARANCE,
+  DEFAULT_PARAMS,
+  DEFAULT_STRIP,
+  LED_AIR,
+  minLetterH,
+  resolveParams,
+  rMin,
+  STRIP_PROFILES,
+  stripFitWarnings,
+  totalHeight,
+} from '../src/config';
 
 describe('config', () => {
   it('R_MIN ≈ 14,6 mm con cerniere da 10 mm a 40°', () => {
@@ -47,5 +58,29 @@ describe('config', () => {
     expect(p.WALL).toBe(3);
     expect(p.FLOOR).toBe(DEFAULT_PARAMS.FLOOR);
     expect(DEFAULT_PARAMS.WALL).toBe(2.2);
+  });
+});
+
+describe('striscia e canale', () => {
+  it('ogni profilo ha il canale largo quanto la striscia più la tolleranza', () => {
+    for (const profile of STRIP_PROFILES) {
+      expect(profile.CHANNEL_W, profile.id).toBeCloseTo(profile.STRIP_W + CHANNEL_CLEARANCE, 9);
+    }
+  });
+
+  it('la profondità predefinita è lo spessore della striscia più l\'aria sopra i LED', () => {
+    expect(DEFAULT_PARAMS.CHANNEL_DEPTH).toBeCloseTo(DEFAULT_PARAMS.STRIP_T + LED_AIR, 9);
+  });
+
+  it('un canale che non contiene la striscia avvisa', () => {
+    expect(stripFitWarnings(DEFAULT_PARAMS)).toEqual([]);
+    const narrow = stripFitWarnings({ ...DEFAULT_PARAMS, CHANNEL_W: 6 });
+    expect(narrow).toHaveLength(1);
+    expect(narrow[0]).toMatch(/Canale largo 6 mm: la striscia da 10 mm non ci entra/);
+    const shallow = stripFitWarnings({ ...DEFAULT_PARAMS, CHANNEL_DEPTH: 3 });
+    expect(shallow).toHaveLength(1);
+    expect(shallow[0]).toMatch(/Canale profondo 3 mm: la striscia è spessa 6 mm/);
+    // Il canale esattamente largo quanto la striscia passa: la tolleranza è un consiglio, non un obbligo.
+    expect(stripFitWarnings({ ...DEFAULT_PARAMS, CHANNEL_W: DEFAULT_PARAMS.STRIP_W })).toEqual([]);
   });
 });
